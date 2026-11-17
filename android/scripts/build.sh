@@ -7,7 +7,16 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 root=..
 # The sample meeting as 16 kHz WAV: the file source and MediaPlayer both read it.
-afconvert -f WAVE -d LEI16@16000 -c 1 "$root/Resources/sample/sample.m4a" app/src/main/assets/sample.wav
+sample=app/src/main/assets/sample.wav
+if command -v afconvert >/dev/null; then
+  afconvert -f WAVE -d LEI16@16000 -c 1 "$root/Resources/sample/sample.m4a" "$sample"
+elif [ -f "$sample" ]; then
+  : # The checked-in WAV already matches this sample on non-macOS build hosts.
+elif command -v ffmpeg >/dev/null; then
+  ffmpeg -loglevel error -y -i "$root/Resources/sample/sample.m4a" -ac 1 -ar 16000 -c:a pcm_s16le "$sample"
+else
+  echo "need afconvert or ffmpeg to create the onboarding sample WAV" >&2; exit 1
+fi
 mkdir -p build
 if [ "${RELEASE:-}" = 1 ]; then
   ks="${CICADA_KEYSTORE:-$HOME/.cicada-android/release.jks}"

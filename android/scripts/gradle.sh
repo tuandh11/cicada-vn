@@ -3,7 +3,7 @@
 # http(s)_proxy, so a proxy in the environment is handed to Gradle as system properties.
 set -euo pipefail
 D="$HOME/.cicada-android"
-export JAVA_HOME="$D/jdk/Contents/Home" ANDROID_HOME="$D/sdk"
+export JAVA_HOME="$D/jdk/Contents/Home" ANDROID_HOME="$D/sdk" ANDROID_SDK_ROOT="$D/sdk"
 cd "$(dirname "$0")/.."
 props=()
 if [ -n "${https_proxy:-${HTTPS_PROXY:-}}" ]; then

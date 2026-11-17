@@ -7,7 +7,7 @@ class AppSettings(
     /// What subtitles translate into; "system" follows the phone's language.
     var target: String = "system",
     /// 纪要语言: the notes' language code; "system" is the same as the subtitles'.
-    var notesLanguage: String = "system",
+    var notesLanguage: String = "vi",
     /// Ling's text model (the other services' are in aiModels).
     var model: String = LingClient.DEFAULT_MODEL,
     /// AI 服务 (Settings.swift's keys): the service, and per service the models chosen over its

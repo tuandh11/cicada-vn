@@ -45,6 +45,10 @@ object Providers {
         hearModels = listOf(Model("Ming-3.0-audio-flash")),
         voiceModels = listOf(Model("Ming-3.0-tts-0.5B")), clones = true, spacing = 0.6)
 
+    /// Google's REST API has its own request/response schema; GeminiAdapter handles it directly.
+    val GEMINI = Provider("gemini", "Google Gemini", "https://generativelanguage.googleapis.com/v1beta/", "https://aistudio.google.com/api-keys",
+        textModels = listOf(Model("gemini-3.8-flash")), hearModels = listOf(Model("gemini-3.8-flash")))
+
     val OPENROUTER = Provider("openrouter", "OpenRouter", "https://openrouter.ai/api/v1/", "https://openrouter.ai/settings/keys",
         textModels = listOf(Model("inclusionai/ling-3.1-flash", "和 Ling 同款"), Model("qwen/qwen3.8-flash", "中文好")),
         hearModels = listOf(Model("qwen/qwen3.8-omni-flash", "没人说话时不乱写"), Model("google/gemini-3.1-flash-lite", "最快，偶尔把杂音写成字")),
@@ -62,7 +66,7 @@ object Providers {
     /// in; voices only when the user names a speech model.
     val CUSTOM = Provider("custom", "其他（兼容 OpenAI）", null, null)
 
-    val ALL = listOf(LING, OPENROUTER, ZENMUX, CUSTOM)
+    val ALL = listOf(LING, GEMINI, OPENROUTER, ZENMUX, CUSTOM)
 
     fun named(raw: String?): Provider = ALL.firstOrNull { it.id == raw } ?: LING
 
@@ -118,6 +122,10 @@ object Providers {
         if (p.id == "ling") {
             val text = if (p.textModels.any { it.id == s.model }) s.model else p.textModels[0].id
             return AIConfig(p, p.base, text, p.hearModels[0].id, p.voiceModels[0].id, p.base)
+        }
+        if (p.id == "gemini") {
+            return AIConfig(p, p.base, s.aiModels[p.id]?.ifBlank { null } ?: p.textModels[0].id,
+                s.aiHearModels[p.id]?.ifBlank { null } ?: p.hearModels[0].id, voiceModel = null, voiceBase = null, hearBase = p.base)
         }
         if (p.id == "custom") {
             val base = customBase(s.aiCustomBase)

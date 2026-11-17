@@ -275,7 +275,7 @@ object Tests {
             AppSettings.systemLanguages = { zhEn }
             val follow = AppSettings()
             equal("zh-CN", follow.targetCode, "my language"); equal("en", follow.targetFor("zh-CN"), "follows")
-            equal("zh-CN", follow.notesCode, "notes in my language")
+            equal("vi", follow.notesCode, "Vietnamese notes by default")
             equal("zh-CN", AppSettings(target = "zh-CN").targetFor("zh-CN"), "a chosen language stays")
         } finally { AppSettings.systemLanguages = old }
     }
@@ -414,6 +414,10 @@ object Tests {
         equal("en", Languages.fromSystem("en-GB"), "system en")
         equal("Simplified Chinese", Languages.englishName("zh-CN"), "english name")
         equal("Japanese", Languages.englishName("ja"), "english name ja")
+        equal("vi", Languages.normalize("vi-VN", "en"), "Vietnamese recognition code")
+        check(Languages.sources.any { it.code == "vi" } && Languages.targets.any { it.code == "vi" }, "Vietnamese selectable")
+        check(Languages.inScript("Xin chào, tôi là An.", "vi"), "Vietnamese translation script")
+        equal("vi", AppSettings().notesCode, "Vietnamese notes default")
         equal("01:05", Languages.clock(65.9), "clock"); equal("1:00:01", Languages.clock(3601.0), "clock hours")
     }
 
@@ -619,6 +623,7 @@ object Tests {
         check(f.contains("This meeting ran 01:04: use at most 1 topic."), "final topic limit")
         check(p.contains("at most 8 in total") && f.contains("at most 8 in total"), "with nothing frozen, the Mac's limit")
         check(p.contains("never append to it"), "topic summaries stay one sentence")
+        check(p.contains("Leave greetings, acknowledgements and filler out") && p.contains("never infer or invent a deadline"), "substance and evidence-based deadlines")
         check(NotesEngine.written(MeetingNotes(summary = "讨论发布 Stripe"), "Simplified Chinese"), "Chinese notes")
         check(!NotesEngine.written(MeetingNotes(summary = "We talked"), "Simplified Chinese"), "English isn't Chinese")
     }
@@ -748,6 +753,11 @@ object Tests {
         equal("%@ min", t["%@ 分钟"], "placeholders kept")
         equal("3 分钟", Strings.LF("%@ 分钟", 3), "LF fills %@")
         equal("1 句", Strings.LF("%lld 句", 1), "Chinese has no plural forms")
+        loadStrings("vi-VN")
+        equal("vi", Strings.language, "Vietnamese locale is selected")
+        equal("Ngôn ngữ", Strings.L("语言"), "Vietnamese shared string")
+        equal("Ngôn ngữ giao diện", Strings.L("界面语言"), "Vietnamese Android-only string")
+        loadStrings("zh-Hans")
     }
 
     fun todoOwnersShowInTheUiLanguage() {

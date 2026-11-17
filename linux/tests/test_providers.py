@@ -11,7 +11,7 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
-from cicada.core import jsonfmt, providers, voices  # noqa: E402
+from cicada.core import gemini, jsonfmt, providers, voices  # noqa: E402
 from cicada.core.ling import (INVALID, NONE, OK, TRANSLATE, AIKey, LingClient, LingError, Response,  # noqa: E402
                               StreamResponse, pcm_from_wav)
 from cicada.core.listen import problem  # noqa: E402
@@ -27,10 +27,12 @@ class Fake:
         self.respond = respond
         self.speech = speech
         self.sent = []      # (url, body or "")
+        self.headers = []
         self.streamed = []  # (url, body)
 
     def send(self, url, method, body, headers, timeout):
         self.sent.append((url, body or ""))
+        self.headers.append(headers)
         return self.respond(url, body or "")
 
     def stream(self, url, body, headers, timeout):
@@ -77,6 +79,63 @@ class Table(Base):
         # Ling keeps its own key ("model"); a service never named falls back to Ling.
         self.assertEqual("Ling-3.0-flash", AppSettings(model="Ling-3.0-flash").ai_config().text_model)
         self.assertEqual("ling", providers.named("openai").id)
+
+    def test_gemini_uses_its_native_generate_content_adapter(self):
+        response = jsonfmt.write({"candidates": [{"content": {"parts": [{"text": "LANG: en\\nORIGINAL: Hi.\\nTRANSLATION: Xin chào."}]},
+                                                   "finishReason": "STOP"}]}, pretty=False)
+        fake = Fake(lambda _url, _body: Response(200, response))
+        ling, s = self.client(fake, provider="gemini", key="AIza-test-gemini")
+        answer = ling.chat("system instruction", "audio instruction", TRANSLATE, audio=b"fake-wav")
+        self.assertIn("TRANSLATION: Xin chào.", answer)
+        url, sent = fake.sent[0]
+        self.assertEqual("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent", url)
+        self.assertEqual("AIza-test-gemini", fake.headers[0].get("x-goog-api-key"))
+        self.assertNotIn("Authorization", fake.headers[0])
+        request = jsonfmt.parse_object(sent)
+        self.assertEqual("system instruction", request["systemInstruction"]["parts"][0]["text"])
+        audio = next(p["inlineData"] for p in request["contents"][0]["parts"] if "inlineData" in p)
+        self.assertEqual("audio/wav", audio["mimeType"])
+        self.assertEqual(base64.b64encode(b"fake-wav").decode(), audio["data"])
+        self.assertEqual("gemini-3.8-flash", s.ai_config().hear_model)
+        normalized = gemini.response({"candidates": [{"content": {"parts": [
+            {"text": "private thought", "thought": True}, {"text": "ok"}]}}], "usageMetadata": {
+            "promptTokenCount": 17, "candidatesTokenCount": 6, "totalTokenCount": 23}})
+        self.assertEqual("ok", normalized["choices"][0]["message"]["content"])
+        self.assertEqual({"prompt_tokens": 17, "completion_tokens": 6, "total_tokens": 23}, normalized["usage"])
+
+    def test_gemini_api_statuses_and_transient_retries(self):
+        from cicada.core.ling import Clock
+
+        class StepClock(Clock):
+            def __init__(self): self.t = 0.0
+            def now(self): return self.t
+            def wait(self, condition, seconds): self.t += seconds or 0.0
+
+        def gemini_reply():
+            return Response(200, jsonfmt.write({"candidates": [{"content": {"parts": [{"text": "ok"}]},
+                                                     "finishReason": "STOP"}]}, pretty=False))
+
+        for status, expected_kind in ((400, LingError.HTTP), (401, LingError.INVALID_KEY), (403, LingError.HTTP)):
+            fake = Fake(lambda _url, _body, status=status: Response(status, "{}"))
+            s = AppSettings(aiProvider="gemini")
+            key = AIKey(service=lambda: s.aiProvider); key.save("AIza-test")
+            ling = LingClient(key, fake, config=s.ai_config, clock=StepClock())
+            with self.assertRaises(LingError) as caught:
+                ling.chat("system", "user", TRANSLATE)
+            self.assertEqual(expected_kind, caught.exception.kind)
+            if status == 403:
+                self.assertEqual(403, caught.exception.status)
+                self.assertNotEqual(INVALID, ling.key_state)
+
+        for status in (429, 500, 503):
+            calls = []
+            fake = Fake(lambda _url, _body, status=status: (calls.append(1) or
+                         (Response(status, "{}", "0") if len(calls) == 1 else gemini_reply())))
+            s = AppSettings(aiProvider="gemini")
+            key = AIKey(service=lambda: s.aiProvider); key.save("AIza-test")
+            ling = LingClient(key, fake, config=s.ai_config, clock=StepClock())
+            self.assertEqual("ok", ling.chat("system", "user", TRANSLATE))
+            self.assertEqual(2, len(calls), f"Gemini {status} retries once for text calls")
 
     def test_chosen_models_and_a_custom_service(self):
         s = AppSettings(aiProvider="openrouter", aiHearModels={"openrouter": "google/gemini-3.1-flash-lite"})

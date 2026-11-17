@@ -621,7 +621,7 @@ class LingClient(
     fun fetchCatalog(): Pair<Set<String>, Set<String>?>? {
         val c = config()
         val k = currentKey() ?: return null
-        if (c.isLing || c.base == null) return null
+        if (c.isLing || c.provider.id == "gemini" || c.base == null) return null
         hearListed = null
         val hearBody = if (c.hearsElsewhere && c.hearBase != null) models(c.hearBase, k) else null
         if (hearBody != null) {
@@ -694,11 +694,12 @@ class LingClient(
         if (json) body["response_format"] = mapOf("type" to "json_object")
 
         val waits = retryWaits(priority, audio != null, patient)
+        val retryDelays = waits.ifEmpty { if (c.provider.id == "gemini") listOf(1.0) else emptyList() }
         var attempt = 1
         var ticket: Long? = null
         while (true) {
             // One that wouldn't retry fails at once while the service is cooling down: its caller falls back.
-            ticket = acquire(priority, c.provider.spacing, gate, ticket, failIfPaused = waits.isEmpty())
+            ticket = acquire(priority, c.provider.spacing, gate, ticket, failIfPaused = retryDelays.isEmpty())
             val started = System.nanoTime()
             try {
                 val root = try {
@@ -728,10 +729,14 @@ class LingClient(
             } catch (e: LingException) {
                 // A reply we drop (a search essay) still proves the service answers.
                 observe(e.takeIf { it.kind != LingException.Kind.Hijacked }, audio = audio != null, notes = notesSide)
-                if (e.kind != LingException.Kind.RateLimited) throw e
-                val wait = rateLimited(if (waits.isEmpty()) 1.0 else waits[minOf(attempt, waits.size) - 1], e.retryAfter, gate)
-                if (attempt > waits.size || wait == null) { rateLimitedAt = System.currentTimeMillis(); changed(); throw e }
-                Log.d("ling: $priority 429, retry in ${"%.1f".format(wait)} s")
+                val transientServerError = c.provider.id == "gemini" && e.kind == LingException.Kind.Http && e.status in listOf(500, 503)
+                if (e.kind != LingException.Kind.RateLimited && !transientServerError) throw e
+                val backoff = retryDelays.getOrNull(minOf(attempt - 1, retryDelays.lastIndex)) ?: 1.0
+                val wait = rateLimited(backoff,
+                    e.retryAfter.takeIf { e.kind == LingException.Kind.RateLimited }, gate)
+                if (attempt > retryDelays.size || wait == null) { rateLimitedAt = System.currentTimeMillis(); changed(); throw e }
+                val status = if (e.kind == LingException.Kind.Http) e.status else 429
+                Log.d("ai ${c.provider.id}: $priority HTTP $status, retry in ${"%.1f".format(wait)} s")
                 attempt++
             }
         }
@@ -833,9 +838,9 @@ class LingClient(
         }
     }
 
-    private fun headers(k: String): Map<String, String> {
+    private fun headers(k: String, gemini: Boolean = false): Map<String, String> {
         val h = linkedMapOf("Content-Type" to "application/json", "User-Agent" to "Cicada-Android/0.1")
-        if (k.isNotEmpty()) h["Authorization"] = "Bearer $k"
+        if (k.isNotEmpty()) h[if (gemini) "x-goog-api-key" else "Authorization"] = if (gemini) k else "Bearer $k"
         return h
     }
 
@@ -846,6 +851,12 @@ class LingClient(
     /// request asked again without JSON mode still turns thinking off.
     /// `notes`: a request to the notes' own model or server (a refused key is theirs, not translation's).
     private fun postChat(url: String, body: Map<String, Any?>, k: String, timeout: Double, notes: Boolean = false): Map<String, Any?> {
+        if (config().provider.id == "gemini") {
+            val base = config().base ?: throw LingException(LingException.Kind.Network)
+            val model = body["model"].str() ?: config().textModel
+            val root = post(GeminiAdapter.endpoint(base, model), Json.write(GeminiAdapter.request(body), pretty = false), k, timeout, notes, gemini = true)
+            return GeminiAdapter.response(root)
+        }
         try {
             return post(url, Json.write(body, pretty = false), k, timeout, notes)
         } catch (e: LingException) {
@@ -859,9 +870,9 @@ class LingClient(
         }
     }
 
-    private fun post(url: String, payload: String, k: String, timeout: Double, notes: Boolean = false): Map<String, Any?> {
+    private fun post(url: String, payload: String, k: String, timeout: Double, notes: Boolean = false, gemini: Boolean = false): Map<String, Any?> {
         val res = try {
-            transport.send(url, "POST", payload, headers(k), (timeout * 1000).toInt())
+            transport.send(url, "POST", payload, headers(k, gemini), (timeout * 1000).toInt())
         } catch (_: SocketTimeoutException) {
             throw LingException(LingException.Kind.Timeout)
         } catch (e: java.io.IOException) {
@@ -870,13 +881,20 @@ class LingClient(
         }
         when (res.status) {
             200 -> {}
-            401, 403 -> {
+            401 -> {
                 if (!notes && keyState != KeyState.Invalid) { keyState = KeyState.Invalid; changed() }
                 throw LingException(LingException.Kind.InvalidKey)
             }
+            403 -> {
+                if (!gemini) {
+                    if (!notes && keyState != KeyState.Invalid) { keyState = KeyState.Invalid; changed() }
+                    throw LingException(LingException.Kind.InvalidKey)
+                }
+                throw LingException(LingException.Kind.Http, 403)
+            }
             429 -> throw LingException(LingException.Kind.RateLimited, 429, retryAfterSeconds(res.retryAfter))
             else -> {
-                Log.d("ling: HTTP ${res.status}")
+                Log.d("ai ${config().provider.id}: HTTP ${res.status}")
                 throw LingException(LingException.Kind.Http, res.status)
             }
         }
@@ -928,8 +946,8 @@ class LingClient(
         }
     }
 
-    /// After a 429: no request starts at that server for `backoff` seconds, or as long as it asked
-    /// (Retry-After; Ling sends none), plus a little jitter. The queue waits at the gate instead of
+    /// After a 429 or transient Gemini 5xx: no request starts at that server for `backoff` seconds,
+    /// or as long as it asked (Retry-After), plus a little jitter. The queue waits at the gate instead of
     /// each request spending its retries on the same limit. Null when that is over MAX_PAUSE (the
     /// gate still holds for MAX_PAUSE): an outage, not a busy moment.
     private fun rateLimited(backoff: Double, retryAfter: Double?, g: StartGate): Double? {

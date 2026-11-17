@@ -661,7 +661,8 @@ class NotesWindow(Gtk.Window):
         notes = self.app.notes
         other = None
         if not live and s is not None and s.lines and heard and heard != mine and notes.status != notesmod.UPDATING:
-            other = ("mine", mine) if listen.notes_choice(s.id) == "source" else ("source", heard)
+            current = listen.notes_choice(s.id)
+            other = ("mine", mine) if current == "source" else ("source", heard)
         open_ = live and getattr(self, "lang_open", False)
         key = (live, open_, s.id if s else None, heard, listen.notes_choice(s.id) if s else None, mine, other)
         self.lang_wrap.set_visible(live or other is not None)
@@ -691,7 +692,7 @@ class NotesWindow(Gtk.Window):
             card.pack_start(top, False, False, 0)
             card.pack_start(ui.vbox(6, ui.text(L("对方说"), 12, "secondary", bold=True, wrap=False),
                                     ui.text(name(heard) if heard else L("还没听出来"), 13, "ink", wrap=False)), False, False, 0)
-            seg = ui.segmented([("mine", name(mine)), ("source", LF("%@（原文）", name(heard)) if heard else L("会议原文"))],
+            seg = ui.segmented([("vi", "Tiếng Việt"), ("mine", name(mine)), ("source", LF("%@（原文）", name(heard)) if heard else L("会议原文"))],
                                listen.notes_choice(s.id), lambda v: listen.set_notes_language(v, meeting_only=True))
             for b in seg.get_children():
                 b.set_can_focus(False)

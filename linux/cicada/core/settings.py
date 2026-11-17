@@ -12,7 +12,7 @@ DEFAULT_MODEL = "Ling-3.1-flash"
 class AppSettings:
     FIELDS = {
         "target": "system",          # what subtitles translate into; "system" follows the desktop language
-        "notesLanguage": "mine",     # 纪要语言, the Mac's: "mine" (my language) or "source" (the meeting's own)
+        "notesLanguage": "vi",       # Notes default to Vietnamese; "mine" and "source" remain available
         "model": DEFAULT_MODEL,       # Ling's text model (the others' are in aiModels)
         # AI 服务 (Settings.swift's keys): the service, and per service the models chosen over its
         # recommended ones. aiHearModels is the port's own: what hears the audio (Ming on Ling).
@@ -43,7 +43,7 @@ class AppSettings:
         "speakLater": False,         # 还差几步 › 同声传译 › 以后再说
         "trayHintShown": False,      # 知了还在顶栏, said once after the records window is first closed
         "showInDock": True,          # 在 Dock 中显示 (the Mac's): in the dock for as long as 知了 runs
-        "uiLanguage": "system",      # "system", "zh-Hans", "en", "ja" or "ko"
+        "uiLanguage": "system",      # "system", "zh-Hans", "en", "ja", "ko" or "vi"
         # 同声传译: what I say is interpreted and spoken into 知了 麦克风 (the Mac's speakEnabled etc.).
         # 保存会议录音 (the Mac's recordAudio): system.m4a beside session.json, when GStreamer has an AAC encoder.
         "recordAudio": True,
@@ -98,7 +98,10 @@ class AppSettings:
     def notes_code(self, choice: str | None = None, meeting: str | None = None) -> str:
         """The notes' language for a 纪要语言 choice (this one's when None): the meeting's own language
         (`meeting`, the one it was heard in) for "source", else mine (the Mac's notesLanguageCode)."""
-        return meeting if (choice or self.notesLanguage) == "source" and meeting else self.target_code
+        selected = choice or self.notesLanguage
+        if selected == "vi":
+            return "Vietnamese"
+        return meeting if selected == "source" and meeting else self.target_code
 
     @property
     def google_off(self) -> bool:
@@ -138,8 +141,8 @@ class AppSettings:
                 if o is not None:
                     kw = {k: o[k] for k, d in AppSettings.FIELDS.items() if k in o and type(o[k]) is type(d)}
                     # 纪要语言 was "system" or a language code before it took the Mac's two choices.
-                    if kw.get("notesLanguage") not in (None, "mine", "source"):
-                        kw["notesLanguage"] = "mine"
+                    if kw.get("notesLanguage") not in (None, "mine", "source", "vi"):
+                        kw["notesLanguage"] = "vi"
                     # Every launch starts with the microphone off.
                     kw.pop("listenSource", None)
                     return AppSettings(**kw)

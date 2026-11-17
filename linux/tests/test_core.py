@@ -410,6 +410,10 @@ class Hearing(Base):
         self.assertEqual("en", support.from_system("en_GB.UTF-8"))
         self.assertEqual("Simplified Chinese", support.english_name("zh-CN"))
         self.assertEqual("Japanese", support.english_name("ja"))
+        self.assertIn(("Tiếng Việt", "vi"), support.SOURCES)
+        self.assertIn(("Tiếng Việt", "vi"), support.TARGETS)
+        self.assertEqual("Vietnamese", support.english_name("vi"))
+        self.assertEqual("Vietnamese", AppSettings().notes_code())
         self.assertEqual("01:05", support.clock(65.9))
         self.assertEqual("1:00:01", support.clock(3601.0))
 
@@ -645,10 +649,10 @@ class Notes(Base):
         self.assertEqual(1, len(rewrites), "the same language again: nothing to rewrite")
         engine.listening = False
 
-    def test_old_notes_language_settings_become_mine(self):
+    def test_old_notes_language_settings_use_vietnamese_default(self):
         with open(Paths.settings(), "w", encoding="utf-8") as f:
             f.write('{"notesLanguage" : "ja"}')
-        self.assertEqual("mine", AppSettings.load().notesLanguage)
+        self.assertEqual("vi", AppSettings.load().notesLanguage)
 
     def test_todo_owner_names_people_when_voices_are_told_apart(self):
         lines = [TranscriptLine(id="h%d-%d" % (i, i), t=i * 3, src="we should ship this on Friday", voice=i % 2) for i in range(12)]
@@ -706,6 +710,8 @@ class Notes(Base):
         self.assertIn("at most 8 in total", p, "nothing frozen yet: the Mac's wording")
         self.assertIn("at most 8 in total", f)
         self.assertIn("never append to it", p, "topic summaries stay one sentence")
+        self.assertIn("Leave greetings, acknowledgements and filler out", p)
+        self.assertIn("never infer or invent a deadline", p)
         log = "对方展示AI眼镜后觉得是完全新的体验，提议可以出发回去。" + "最新对方又补充了一些内容，" * 20
         self.assertEqual("对方展示AI眼镜后觉得是完全新的体验，提议可以出发回去。", notesmod.shortened(log))
         self.assertEqual(notesmod.TOPIC_SUMMARY_LIMIT + 1, len(notesmod.shortened("长" * 200)))
@@ -929,6 +935,12 @@ class Strings(Base):
         self.assertEqual("%@ min", t["%@ 分钟"])
         self.assertEqual("3 分钟", strings.LF("%@ 分钟", 3))
         self.assertEqual("b a", strings.LF("%2$@ %1$@", "a", "b"))
+
+    def test_loads_vietnamese_ui_strings(self):
+        res = [os.path.join(REPO, "Resources"), os.path.join(REPO, "linux", "strings")]
+        strings.load("vi_VN", res)
+        self.assertEqual("vi", strings.language)
+        self.assertEqual("Ngôn ngữ giao diện", strings.L("界面语言"))
 
     def test_key_file_is_private(self):
         key = AIKey()

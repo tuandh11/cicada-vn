@@ -715,7 +715,7 @@ class LingClient:
         just the recommended ones when the service has no `/models`."""
         c = self.config()
         k = self.current_key()
-        if c.is_ling or k is None or c.base is None:
+        if c.is_ling or c.provider.id == "gemini" or k is None or c.base is None:
             return
         try:
             res = self.transport.send(c.base + "models", "GET", None, self._headers(k), 20.0)
@@ -781,12 +781,13 @@ class LingClient:
         if json:
             body["response_format"] = {"type": "json_object"}
         waits = retry_waits(priority, audio is not None, patient)
+        retry_delays = waits or ([1.0] if c.provider.id == "gemini" else [])
         attempt = 1
         name = PRIORITY_NAMES[priority]
         ticket = None
         while True:
             # One that wouldn't retry fails at once while the service is cooling down: its caller falls back.
-            ticket = self._acquire(priority, c.provider.spacing, ticket, fail_if_paused=not waits, base=c.base)
+            ticket = self._acquire(priority, c.provider.spacing, ticket, fail_if_paused=not retry_delays, base=c.base)
             started = time.monotonic()
             try:
                 try:
@@ -822,14 +823,18 @@ class LingClient:
                 return trimmed
             except LingError as e:
                 self.observe(e, audio=audio is not None, notes=notes_side)
-                if e.kind != LingError.RATE_LIMITED:
+                transient_server_error = c.provider.id == "gemini" and e.kind == LingError.HTTP and e.status in (500, 503)
+                if e.kind != LingError.RATE_LIMITED and not transient_server_error:
                     raise
-                wait = self._rate_limited(waits[min(attempt, len(waits)) - 1] if waits else 1.0, e.retry_after, base=c.base)
-                if attempt > len(waits) or wait is None:
+                backoff = retry_delays[min(attempt - 1, len(retry_delays) - 1)] if retry_delays else 1.0
+                wait = self._rate_limited(backoff,
+                                          e.retry_after if e.kind == LingError.RATE_LIMITED else None, base=c.base)
+                if attempt > len(retry_delays) or wait is None:
                     self.rate_limited_at = time.time()
                     self._changed()
                     raise
-                Log.d("ling: %s 429, retry in %.1f s" % (name, wait))
+                status = e.status if e.kind == LingError.HTTP else 429
+                Log.d("ai %s: %s HTTP %d, retry in %.1f s" % (c.provider.id, name, status, wait))
                 attempt += 1
 
     def speech(self, text: str, voice: str | None = "UK_Charlotte", language: str | None = None, timeout: float = 20.0,
@@ -914,10 +919,10 @@ class LingClient:
             for b in res.chunks:
                 yield b
 
-    def _headers(self, k: str) -> dict:
+    def _headers(self, k: str, gemini: bool = False) -> dict:
         h = {"Content-Type": "application/json", "User-Agent": "Cicada-Linux/0.1"}
         if k:
-            h["Authorization"] = "Bearer " + k
+            h["x-goog-api-key" if gemini else "Authorization"] = k if gemini else "Bearer " + k
         return h
 
     def _post_chat(self, base: str, body: dict, k: str, timeout: float, notes: bool = False) -> dict:
@@ -925,6 +930,13 @@ class LingClient:
         asked again without it, and once that works it isn't sent there again until settings change
         (Ling.swift › postChat). A 400 the plain request gets too is the model's or the audio's, not
         the field's: that one is raised and nothing is remembered."""
+        if self.config().provider.id == "gemini":
+            from . import gemini
+            c = self.config()
+            model = body.get("model") or c.text_model
+            root = self._post(gemini.endpoint(c.base or base, model), jsonfmt.write(gemini.request(body), pretty=False),
+                              k, timeout, notes, gemini=True)
+            return gemini.response(root)
         try:
             return self._post(base + "chat/completions", jsonfmt.write(body, pretty=False), k, timeout, notes)
         except LingError as e:
@@ -936,17 +948,17 @@ class LingClient:
             self._plain_bases.add(base)
             return root
 
-    def _post(self, url: str, payload: str, k: str, timeout: float, notes: bool = False) -> dict:
+    def _post(self, url: str, payload: str, k: str, timeout: float, notes: bool = False, gemini: bool = False) -> dict:
         """`notes`: it went with the notes' own key or to their server, so a refused key is theirs,
         not translation's."""
         try:
-            res = self.transport.send(url, "POST", payload, self._headers(k), timeout)
+            res = self.transport.send(url, "POST", payload, self._headers(k, gemini), timeout)
         except TimeoutError:
             raise LingError(LingError.TIMEOUT) from None
         except OSError as e:
             Log.d("ling: network error %s" % type(e).__name__)
             raise LingError(LingError.NETWORK) from None
-        if res.status in (401, 403):
+        if res.status == 401 or (res.status == 403 and not gemini):
             if not notes and self.key_state != INVALID:
                 self.key_state = INVALID
                 self._changed()
@@ -954,7 +966,7 @@ class LingClient:
         if res.status == 429:
             raise LingError(LingError.RATE_LIMITED, retry_after=retry_after_seconds(getattr(res, "retry_after", None)))
         if res.status != 200:
-            Log.d("ling: HTTP %d" % res.status)
+            Log.d("ai %s: HTTP %d" % (self.config().provider.id, res.status))
             raise LingError(LingError.HTTP, res.status)
         root = jsonfmt.parse_object(res.body)
         if root is None:
@@ -1008,8 +1020,8 @@ class LingClient:
                 raise
 
     def _rate_limited(self, backoff: float, retry_after: float | None, base: str | None = None) -> float | None:
-        """After a 429: no request starts for `backoff` seconds, or as long as the service asked
-        (Retry-After; Ling sends none), plus a little jitter. The queue waits at the gate instead of
+        """After a 429 or a transient Gemini 5xx: no request starts for `backoff` seconds, or as long
+        as the service asked (Retry-After), plus a little jitter. The queue waits at the gate instead of
         each request spending its retries on the same limit. None when the service asks for longer
         than MAX_PAUSE: that is an outage, not a busy moment (the gate still holds for MAX_PAUSE)."""
         wait = max(backoff, retry_after or 0.0) + random.random() * 0.5

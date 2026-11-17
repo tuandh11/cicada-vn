@@ -587,6 +587,8 @@ final class NotesEngine: ObservableObject {
         - A topic's summary is one sentence on the whole topic, at most 40 Chinese characters or 25 words: as the topic grows, rewrite it; never append to it or narrate what came next ("最新", "又", "补充", "then", "later").
         - At most 4 points per topic, each one short phrase. Merge rather than repeat.
         - At most 5 conclusions and only real to-dos (often none).
+        - Leave greetings, acknowledgements and filler out of the summary and topics unless they contain a substantive update or commitment.
+        - Keep any deadline stated for a to-do in its text, preserving the date or time as said; never infer or invent a deadline.
         - Add a fishbone only to a topic that discusses causes, reasons or factors (3-5 branches); otherwise null.
         - Every topic, point, branch, conclusion and to-do needs evidence: the ids of the lines that say it. Never state anything the transcript does not say.
         - terms: at most 10 in total, replacing less useful ones rather than adding: first names the transcript misspells (heard), then the people, places and jargon a reader would not know. Leave out what everyone knows (a famous company, index or politician) unless it was misheard. name is the correct spelling in the transcript's language (no translation in brackets); heard lists only the wrong forms the transcript used, and only of that same thing: a name said again and again in one spelling that context doesn't tie to a known one ("我们 twoty", "our platform") is a thing of its own, its own term with that spelling, not a mishearing of a similar name; note is a few words.

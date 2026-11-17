@@ -56,6 +56,11 @@ LING = Provider(
     hear_models=(Model("Ming-3.0-audio-flash"),),
     voice_models=(Model("Ming-3.0-tts-0.5B"),), clones=True, spacing=0.6)
 
+# Native Google API schema, handled by gemini.py (not OpenAI-compatible).
+GEMINI = Provider(
+    "gemini", "Google Gemini", "https://generativelanguage.googleapis.com/v1beta/", "https://aistudio.google.com/api-keys",
+    text_models=(Model("gemini-3.8-flash"),), hear_models=(Model("gemini-3.8-flash"),))
+
 OPENROUTER = Provider(
     "openrouter", "OpenRouter", "https://openrouter.ai/api/v1/", "https://openrouter.ai/settings/keys",
     text_models=(Model("inclusionai/ling-3.1-flash", "和 Ling 同款"), Model("qwen/qwen3.8-flash", "中文好")),
@@ -75,7 +80,7 @@ ZENMUX = Provider(
 # voices only when the user names a speech model.
 CUSTOM = Provider("custom", "其他（兼容 OpenAI）", None, None)
 
-ALL = (LING, OPENROUTER, ZENMUX, CUSTOM)
+ALL = (LING, GEMINI, OPENROUTER, ZENMUX, CUSTOM)
 
 
 def named(raw: str) -> Provider:
@@ -253,6 +258,9 @@ def config_from(settings) -> AIConfig:
     if p.id == "ling":
         text = settings.model if settings.model in [m.id for m in p.text_models] else p.text_models[0].id
         return AIConfig(p, p.base, text, p.hear_models[0].id, p.voice_models[0].id, p.base)
+    if p.id == "gemini":
+        return AIConfig(p, p.base, models.get(p.id) or p.text_models[0].id,
+                        hears.get(p.id) or p.hear_models[0].id, hear_base=p.base)
     if p.id == "custom":
         base = custom_base(settings.aiCustomBase)
         voice = (voices.get("custom") or "").strip()

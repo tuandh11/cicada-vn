@@ -46,12 +46,12 @@ data class Lang(val name: String, val code: String)
 object Languages {
     val sources = listOf(
         Lang("English", "en"), Lang("日本語", "ja"), Lang("中文", "zh-CN"), Lang("한국어", "ko"),
-        Lang("Español", "es"), Lang("Français", "fr"), Lang("Deutsch", "de"), Lang("Português", "pt"),
+        Lang("Español", "es"), Lang("Français", "fr"), Lang("Deutsch", "de"), Lang("Português", "pt"), Lang("Tiếng Việt", "vi"),
     )
 
     val targets = listOf(
         Lang("简体中文", "zh-CN"), Lang("繁體中文", "zh-TW"), Lang("English", "en"), Lang("日本語", "ja"),
-        Lang("한국어", "ko"), Lang("Español", "es"), Lang("Français", "fr"), Lang("Deutsch", "de"), Lang("Português", "pt"),
+        Lang("한국어", "ko"), Lang("Español", "es"), Lang("Français", "fr"), Lang("Deutsch", "de"), Lang("Português", "pt"), Lang("Tiếng Việt", "vi"),
     )
 
     /// "Simplified Chinese", "Japanese": the names prompts use.

@@ -110,6 +110,8 @@ import Testing
         let p = NotesEngine.prompt(notes: notes, lines: lines(24), from: 20, language: "English", final: false, frozen: 6)
         #expect(!p.contains("do not start a new topic"))
         #expect(p.contains("never append to it"))
+        #expect(p.contains("Leave greetings, acknowledgements and filler out"))
+        #expect(p.contains("never infer or invent a deadline"))
     }
 
     @Test func longMeetingsSplitByTime() {

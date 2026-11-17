@@ -18,7 +18,7 @@ def load(ui: str, folders: list) -> None:
     <lang>.lproj/{Localizable,Linux}.strings, later folders over earlier ones."""
     global _table, _plurals, language
     head = ui.replace("_", "-").split("-")[0]
-    language = head if head in ("en", "ja", "ko") else "zh-Hans"
+    language = head if head in ("en", "ja", "ko", "vi") else "zh-Hans"
     t: dict = {}
     for folder in folders:
         for name in ("Localizable.strings", "Linux.strings"):
