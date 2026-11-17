@@ -24,6 +24,7 @@ object ProviderTests {
         "aiRequestsGoToTheServiceInItsShape" to ::requestShape,
         "aiGeminiUsesItsNativeGenerateContentAdapter" to ::geminiAdapter,
         "aiGeminiMapsStatusesAndRetriesTransientFailures" to ::geminiStatuses,
+        "aiGeminiDoesNotFallbackToGoogleTranslation" to ::geminiNoTranslationFallback,
         "aiLingStillDropsRepliesWithoutAFinishReason" to ::lingDropsNoFinish,
         "aiCheckFindsAHearModelThatRefusesAudio" to ::checkFindsDeafModel,
         "aiCheckSaysWhy" to ::checkSaysWhy,
@@ -98,7 +99,17 @@ object ProviderTests {
         val ling = AppSettings().aiConfig()
         equal("Ming-3.0-audio-flash" to "Ling-3.1-flash", ling.hearModel to ling.textModel, "Ling")
         val gemini = AppSettings(aiProvider = "gemini").aiConfig()
-        equal("gemini-3.8-flash" to "gemini-3.8-flash", gemini.hearModel to gemini.textModel, "Gemini text and audio model")
+        equal("gemini-2.5-flash-lite" to "gemini-2.5-flash-lite", gemini.hearModel to gemini.textModel, "Gemini text and audio model")
+        equal("gemini-2.5-flash", gemini.forNotes.textModel, "Gemini notes model")
+        check(gemini.notesApart, "Gemini notes route separately")
+        equal(listOf("gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-3.8-flash"), Providers.GEMINI.textModels.map { it.id }, "Gemini text options")
+        val geminiSettings = AppSettings(aiProvider = "gemini", aiModels = mutableMapOf("gemini" to "gemini-3.8-flash"))
+        equal("gemini-3.8-flash" to "gemini-2.5-flash", geminiSettings.aiConfig().textModel to geminiSettings.aiConfig().forNotes.textModel,
+            "old settings get independent routing defaults")
+        val sharedNotes = AppSettings(aiProvider = "gemini", aiModels = mutableMapOf("gemini.notes" to "gemini-2.5-flash-lite"))
+        check(!sharedNotes.aiConfig().notesApart, "notes can share text model when selected")
+        equal("custom.notes", Providers.notesModelKey("custom"), "legacy custom notes key")
+        equal("gemini.notes", Providers.notesModelKey("gemini"), "provider-scoped notes key")
         check(!gemini.hasVoices, "Gemini text model uses the platform voice fallback")
         // Ling keeps its own key ("model"); a service never named falls back to Ling.
         equal("Ling-3.0-flash", AppSettings(model = "Ling-3.0-flash").aiConfig().textModel, "Ling's model")
@@ -472,20 +483,26 @@ object ProviderTests {
         val ling = client(fake, s, key = "AIza-test-gemini")
         val answer = ling.chat("system instruction", "audio instruction", Priority.Translate, audio = LingClient.silenceWav())
         check("TRANSLATION: Xin chào." in answer, "Gemini candidate text is normalized")
-        equal("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent", fake.sent.single().first, "native Google endpoint")
+        equal("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent", fake.sent.single().first, "native Google endpoint")
         equal("AIza-test-gemini", fake.googleKeys.single(), "Google API key header")
         equal(null, fake.auths.single(), "not sent as a bearer token")
         val request = body(fake.sent.single().second)
+        val generation = request["generationConfig"].obj()!!
+        equal("2048", generation["maxOutputTokens"].toString(), "translation output budget is not restrictive")
+        equal("0", generation["thinkingConfig"].obj()!!["thinkingBudget"].toString(), "disable thinking for fast 2.5 translation")
         equal("system instruction", request["systemInstruction"].obj()!!["parts"].arr().single().obj()!!["text"], "system prompt")
         val audio = request["contents"].arr().single().obj()!!["parts"].arr().map { it.obj()!! }.single { "inlineData" in it }
         equal("audio/wav", audio["inlineData"].obj()!!["mimeType"], "Gemini audio MIME")
         check((audio["inlineData"].obj()!!["data"].str() ?: "").isNotEmpty(), "inline audio is base64")
-        equal("gemini-3.8-flash", s.aiConfig().hearModel, "audio-capable default model")
-        val normalized = GeminiAdapter.response(mapOf("candidates" to listOf(mapOf("content" to mapOf("parts" to listOf(
-            mapOf("text" to "private thought", "thought" to true), mapOf("text" to "ok"))))),
-            "usageMetadata" to mapOf("promptTokenCount" to 17, "candidatesTokenCount" to 6, "totalTokenCount" to 23)))
+        equal("gemini-2.5-flash-lite", s.aiConfig().hearModel, "audio-capable default model")
+        val normalized = GeminiAdapter.response(mapOf(
+            "candidates" to listOf(mapOf("content" to mapOf("parts" to listOf(
+                mapOf("text" to "private thought", "thought" to true), mapOf("text" to "ok"))), "finishReason" to "STOP")),
+            "usageMetadata" to mapOf("promptTokenCount" to 17, "candidatesTokenCount" to 6,
+                "thoughtsTokenCount" to 3, "totalTokenCount" to 26)))
         equal("ok", normalized["choices"].arr().single().obj()!!["message"].obj()!!["content"], "thought parts are not user output")
-        equal(mapOf("prompt_tokens" to 17, "completion_tokens" to 6, "total_tokens" to 23), normalized["usage"], "Google token usage names")
+        equal("STOP", normalized["provider_finish_reason"], "Google finish reason retained")
+        equal(mapOf("prompt_tokens" to 17, "completion_tokens" to 6, "reasoning_tokens" to 3, "total_tokens" to 26), normalized["usage"], "Google token usage names")
     }
 
     fun geminiStatuses() {
@@ -509,8 +526,25 @@ object ProviderTests {
             val k = AIKey(PlainProtector, service = { s.aiProvider }).apply { save("AIza-test") }
             val ling = LingClient(k, fake, config = s::aiConfig, clock = StepClock())
             equal("ok", ling.chat("system", "user", Priority.Translate), "Gemini $status retry")
-            equal(2, calls, "one retry for Gemini $status")
+            equal(2, calls, "Gemini $status retry")
         }
+        var calls = 0
+        val failed = Fake({ _, _ -> calls++; Transport.Response(503, "{}") })
+        val settings = AppSettings(aiProvider = "gemini")
+        val key = AIKey(PlainProtector, service = { settings.aiProvider }).apply { save("AIza-test") }
+        val bounded = LingClient(key, failed, config = settings::aiConfig, clock = StepClock())
+        try { bounded.chat("system", "user", Priority.Translate); throw AssertionError("Gemini retried without bound") }
+        catch (e: LingException) { equal(LingException.Kind.Http, e.kind, "bounded retry returns server error") }
+        equal(4, calls, "three bounded exponential retries")
+    }
+
+    fun geminiNoTranslationFallback() {
+        val fake = Fake({ _, _ -> Transport.Response(503, "{}") })
+        val s = AppSettings(aiProvider = "gemini")
+        val ling = client(fake, s, key = "AIza-test-gemini")
+        val out = Translator(ling, fake).translate("Hello", "en", "vi", Translator.Kind.Sentence)
+        equal(null, out, "failed Gemini translation is not sent to another provider")
+        check(fake.sent.none { "translate.googleapis.com" in it.first }, "Google Translate fallback stays disabled")
     }
 
     fun lingDropsNoFinish() {

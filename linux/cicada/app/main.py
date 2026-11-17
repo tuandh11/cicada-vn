@@ -23,7 +23,7 @@ gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from ..core import strings  # noqa: E402
+from ..core import providers, strings  # noqa: E402
 from ..core.audio import PcmAudioSource  # noqa: E402
 from ..core import meeting_end, roommic  # noqa: E402
 from ..core.ling import AIKey, LingClient  # noqa: E402
@@ -484,7 +484,7 @@ class Controller:
             if table is None:
                 return
             if kind == "notes":
-                p = "custom.notes"  # the custom service's notes model ("": the translation one)
+                p = providers.notes_model_key(p)  # custom keeps its legacy key; Gemini notes are independent
             if model:
                 table[p] = model
             else:

@@ -26,6 +26,8 @@ class Provider(
     val site: String?,
     val textModels: List<Model> = emptyList(),
     val hearModels: List<Model> = emptyList(),
+    /** A provider may recommend a different model for long-form meeting notes. */
+    val notesModels: List<Model> = emptyList(),
     /** Empty: this service can't speak to the other side here. */
     val voiceModels: List<Model> = emptyList(),
     /** Of `voiceModels` (Gemini TTS: the same names in every language). */
@@ -47,7 +49,9 @@ object Providers {
 
     /// Google's REST API has its own request/response schema; GeminiAdapter handles it directly.
     val GEMINI = Provider("gemini", "Google Gemini", "https://generativelanguage.googleapis.com/v1beta/", "https://aistudio.google.com/api-keys",
-        textModels = listOf(Model("gemini-3.8-flash")), hearModels = listOf(Model("gemini-3.8-flash")))
+        textModels = listOf(Model("gemini-2.5-flash-lite"), Model("gemini-2.5-flash"), Model("gemini-3.8-flash")),
+        hearModels = listOf(Model("gemini-2.5-flash-lite"), Model("gemini-2.5-flash"), Model("gemini-3.8-flash")),
+        notesModels = listOf(Model("gemini-2.5-flash"), Model("gemini-2.5-flash-lite"), Model("gemini-3.8-flash")))
 
     val OPENROUTER = Provider("openrouter", "OpenRouter", "https://openrouter.ai/api/v1/", "https://openrouter.ai/settings/keys",
         textModels = listOf(Model("inclusionai/ling-3.1-flash", "和 Ling 同款"), Model("qwen/qwen3.8-flash", "中文好")),
@@ -72,6 +76,7 @@ object Providers {
 
     /// The custom service's notes model in `aiModels` (the Mac's key): empty is the translation model.
     const val NOTES_MODEL = "custom.notes"
+    fun notesModelKey(providerId: String) = if (providerId == "custom") NOTES_MODEL else "$providerId.notes"
 
     /// This phone itself: a model running in Termux, say.
     fun isLocal(hostOrUrl: String): Boolean = host(hostOrUrl) in listOf("localhost", "127.0.0.1", "::1")
@@ -124,8 +129,10 @@ object Providers {
             return AIConfig(p, p.base, text, p.hearModels[0].id, p.voiceModels[0].id, p.base)
         }
         if (p.id == "gemini") {
-            return AIConfig(p, p.base, s.aiModels[p.id]?.ifBlank { null } ?: p.textModels[0].id,
-                s.aiHearModels[p.id]?.ifBlank { null } ?: p.hearModels[0].id, voiceModel = null, voiceBase = null, hearBase = p.base)
+            val text = s.aiModels[p.id]?.ifBlank { null } ?: p.textModels[0].id
+            val notes = s.aiModels[notesModelKey(p.id)]?.ifBlank { null } ?: p.notesModels.firstOrNull()?.id
+            return AIConfig(p, p.base, text, s.aiHearModels[p.id]?.ifBlank { null } ?: p.hearModels[0].id,
+                voiceModel = null, voiceBase = null, hearBase = p.base, notesModel = notes?.takeIf { it != text })
         }
         if (p.id == "custom") {
             val base = customBase(s.aiCustomBase)
@@ -199,7 +206,8 @@ class AIConfig(
     val notesBadAddress: Boolean = false,
 ) {
     /// Notes go somewhere translation doesn't: they get their own check, result and start gate.
-    val notesApart get() = provider.id == "custom" && (notesModel != null || notesBase != null || notesOwnService)
+    val notesApart get() = (provider.id == "custom" || provider.id == "gemini") &&
+        (notesModel != null || notesBase != null || notesOwnService)
 
     /// What a notes call is sent with: notes' model at notes' address, the rest as translation.
     val forNotes: AIConfig get() = if (!notesApart) this else
@@ -222,12 +230,14 @@ class AIConfig(
     /// Each service turns thinking off its own way (AIConfig.shape on the Mac). A custom service
     /// gets `chat_template_kwargs` (vLLM, SGLang and llama.cpp pass it to the chat template, which
     /// is how Qwen3 turns thinking off); `templateKwargs` false leaves it out for a server that refused it.
-    fun shape(body: MutableMap<String, Any?>, maxTokens: Int, templateKwargs: Boolean = true) {
+    fun shape(body: MutableMap<String, Any?>, maxTokens: Int, templateKwargs: Boolean = true,
+              fastTranslation: Boolean = false, model: String = textModel) {
         body["max_tokens"] = maxTokens
         body["temperature"] = 0.2
         if (isLing) body["thinking"] = mapOf("type" to "disabled")
         else if (provider.id == "openrouter" || provider.id == "zenmux") body["reasoning"] = mapOf("enabled" to false)
         else if (provider.id == "custom" && templateKwargs) body["chat_template_kwargs"] = mapOf("enable_thinking" to false)
+        else if (provider.id == "gemini" && fastTranslation && model.startsWith("gemini-2.5-")) body["thinking_budget"] = 0
     }
 
     companion object {
@@ -239,6 +249,8 @@ class AIConfig(
             for (k in listOf("reasoning_content", "reasoning")) if (!message?.get(k).str().isNullOrBlank()) return true
             val n = root["usage"].obj()?.get("completion_tokens_details").obj()?.get("reasoning_tokens").num()
             if (n != null && n > 0) return true
+            val geminiThoughts = root["usage"].obj()?.get("reasoning_tokens").num()
+            if (geminiThoughts != null && geminiThoughts > 0) return true
             return message?.get("content").str()?.contains("<think>") == true
         }
     }

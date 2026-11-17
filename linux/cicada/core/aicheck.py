@@ -18,9 +18,9 @@ from .strings import L, LF
 
 STEPS = ("reach", "key", "text", "hear")
 
-UNREACHABLE, BAD_ADDRESS, INVALID_KEY, MGMT_KEY, NO_CREDIT, NO_MODEL, NO_JSON, DEAF, BUSY, SERVER_ERROR = (
-    "unreachable", "badAddress", "invalidKey", "mgmtKey", "noCredit", "noModel", "noJSON", "deaf", "busy", "serverError")
-REASONS = (UNREACHABLE, BAD_ADDRESS, INVALID_KEY, MGMT_KEY, NO_CREDIT, NO_MODEL, NO_JSON, DEAF, BUSY, SERVER_ERROR)
+UNREACHABLE, BAD_ADDRESS, INVALID_KEY, MGMT_KEY, PERMISSION_DENIED, NO_CREDIT, NO_MODEL, NO_JSON, DEAF, BUSY, SERVER_ERROR = (
+    "unreachable", "badAddress", "invalidKey", "mgmtKey", "permissionDenied", "noCredit", "noModel", "noJSON", "deaf", "busy", "serverError")
+REASONS = (UNREACHABLE, BAD_ADDRESS, INVALID_KEY, MGMT_KEY, PERMISSION_DENIED, NO_CREDIT, NO_MODEL, NO_JSON, DEAF, BUSY, SERVER_ERROR)
 
 RUNNING, OK, BUSY_STATE, FAIL, SKIPPED, UNTESTED = "running", "ok", "busy", "fail", "skipped", "untested"
 
@@ -180,13 +180,15 @@ class AICheck:
             UNREACHABLE: lambda: LF("这台电脑访问不到 %@。", host),
             BAD_ADDRESS: lambda: L("地址要用 https；这台电脑和局域网里的服务可以用 http。"),
             INVALID_KEY: lambda: LF("%@ 说这个 key 无效，可能没复制全，或已删除。", service),
+            PERMISSION_DENIED: lambda: LF("%@ 没有调用权限（HTTP 403），请检查 API key 和项目权限。", service),
             MGMT_KEY: lambda: L("这是 ZenMux 的管理 key，不能用来调用模型。请粘贴 sk-payg 开头的 key。"),
             NO_CREDIT: lambda: LF("%@ 账户余额不足。", service),
             NO_MODEL: lambda: LF("%@ 上找不到 %@ 这个模型。", service, text_model),
             NO_JSON: lambda: L("这个服务不支持 JSON，纪要写不了；翻译照常。"),
             DEAF: lambda: LF("%@ 听不了声音。", hear_model or service),  # no hear model yet: the service
             BUSY: lambda: LF("%@ 现在很忙，key 没问题。开会时会自动重试。", service),
-            SERVER_ERROR: lambda: LF("%@ 暂时出错（HTTP %lld），稍后再试。", service, code or 0),
+            SERVER_ERROR: lambda: LF("%@ 当前过载（HTTP 503），请稍后重试。", service) if code == 503 else
+                LF("%@ 暂时出错（HTTP %lld），稍后再试。", service, code or 0),
         }[reason]()
 
     def slow_line(self, google_off: bool = False) -> str | None:
@@ -213,8 +215,10 @@ class AICheck:
         reason = n.reason
         if reason in (INVALID_KEY, MGMT_KEY):
             return LF("%@ 不认上面的 key，给它单独填一个。", host) if shared_key else LF("%@ 说这个 key 无效，可能没复制全，或已删除。", host)
+        if reason == PERMISSION_DENIED:
+            return LF("%@ 没有调用权限（HTTP 403），请检查 API key 和项目权限。", host)
         if reason == SERVER_ERROR:
-            return LF("%@ 暂时出错（HTTP %lld），稍后再试。", host, n.code or 0)
+            return LF("%@ 当前过载（HTTP 503），请稍后重试。", host) if n.code == 503 else LF("%@ 暂时出错（HTTP %lld），稍后再试。", host, n.code or 0)
         return {
             UNREACHABLE: lambda: LF("这台电脑访问不到 %@。", host),
             BAD_ADDRESS: lambda: L("地址要用 https；这台电脑和局域网里的服务可以用 http。"),
@@ -293,6 +297,8 @@ def classify(e: LingError, at: str, audio: bool = False):
     code = e.status
     if code == 402:
         return "key", NO_CREDIT, code
+    if code == 403:
+        return at, PERMISSION_DENIED, code
     if audio and code in (400, 404, 415, 422):
         return "hear", DEAF, code
     if code in (400, 404):
@@ -356,8 +362,8 @@ def simulated(reason: str) -> AICheck:
         r["hear"] = State(BUSY_STATE)
     elif reason in (UNREACHABLE, BAD_ADDRESS):
         r.fail("reach", reason, reached=False)
-    elif reason in (INVALID_KEY, NO_CREDIT):
-        r.fail("key", reason, 402 if reason == NO_CREDIT else None)
+    elif reason in (INVALID_KEY, NO_CREDIT, PERMISSION_DENIED):
+        r.fail("key", reason, 402 if reason == NO_CREDIT else 403 if reason == PERMISSION_DENIED else None)
     elif reason == MGMT_KEY:
         r.fail("key", reason, reached=False)
     elif reason in (NO_MODEL, NO_JSON):

@@ -161,6 +161,8 @@ class AiServiceActivity : Activity() {
         val rows = mutableListOf(
             modelRow(L("听的模型"), L("听对方和“我说”都用它"), p.hearModels, app.ling.hearCatalog, c.hearModel) { app.setAiModel("hear", it) },
             modelRow(L("文字模型"), L("纪要和整句翻译"), p.textModels, app.ling.textCatalog, c.textModel) { app.setAiModel("text", it) })
+        if (p.notesModels.isNotEmpty()) rows.add(modelRow(L("纪要模型"), L("只用于实时纪要"), p.notesModels,
+            app.ling.textCatalog, c.forNotes.textModel) { app.setAiModel("notes", it) })
         if (p.hasVoices) rows.add(modelRow(L("声音模型"), L("面对面时读给对方"), p.voiceModels, emptyList(), c.voiceModel ?: "") { app.setAiModel("voice", it) })
         return rows
     }

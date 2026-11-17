@@ -50,7 +50,7 @@ data class AICheck(
 
     enum class StepID { Reach, Key, Text, Hear }
 
-    enum class Reason { Unreachable, BadAddress, InvalidKey, MgmtKey, NoCredit, NoModel, NoJSON, Deaf, Busy, ServerError }
+    enum class Reason { Unreachable, BadAddress, InvalidKey, MgmtKey, PermissionDenied, NoCredit, NoModel, NoJSON, Deaf, Busy, ServerError }
 
     sealed class State {
         object Running : State()
@@ -144,13 +144,15 @@ data class AICheck(
             Reason.Unreachable -> LF("这台手机访问不到 %@。", host)
             Reason.BadAddress -> L("地址要用 https；这台手机和局域网里的服务可以用 http。")
             Reason.InvalidKey -> LF("%@ 说这个 key 无效，可能没复制全，或已删除。", service)
+            Reason.PermissionDenied -> LF("%@ 没有调用权限（HTTP 403），请检查 API key 和项目权限。", service)
             Reason.MgmtKey -> L("这是 ZenMux 的管理 key，不能用来调用模型。请粘贴 sk-payg 开头的 key。")
             Reason.NoCredit -> LF("%@ 账户余额不足。", service)
             Reason.NoModel -> LF("%@ 上找不到 %@ 这个模型。", service, model)
             Reason.NoJSON -> L("这个服务不支持 JSON，纪要写不了；翻译照常。")
             Reason.Deaf -> LF("%@ 听不了声音。", hearModel)
             Reason.Busy -> LF("%@ 现在很忙，key 没问题。开会时会自动重试。", service)
-            Reason.ServerError -> LF("%@ 暂时出错（HTTP %lld），稍后再试。", service, f.code ?: 0)
+            Reason.ServerError -> if (f.code == 503) LF("%@ 当前过载（HTTP 503），请稍后重试。", service)
+                else LF("%@ 暂时出错（HTTP %lld），稍后再试。", service, f.code ?: 0)
         }
     }
 
@@ -164,6 +166,7 @@ data class AICheck(
         val notesStop = L("字幕照常，纪要先停下")
         return when (f.reason) {
             Reason.InvalidKey, Reason.MgmtKey -> LF("%@ 的 key 用不了", service) to stops
+            Reason.PermissionDenied -> LF("%@ 没有调用权限（HTTP 403），请检查 API key 和项目权限。", service) to stops
             Reason.NoCredit -> LF("%@ 账户余额不足。", service) to stops
             Reason.NoModel -> LF("%@ 上找不到 %@ 这个模型。", service, textModel.substringAfterLast('/')) to notesStop
             Reason.Deaf -> LF("%@ 听不了声音。", hearModel.substringAfterLast('/')) to stops
@@ -191,13 +194,15 @@ data class AICheck(
         return when (n.why) {
             Reason.InvalidKey, Reason.MgmtKey ->
                 if (sharedKey) LF("%@ 不认上面的 key，给它单独填一个。", host) else LF("%@ 说这个 key 无效，可能没复制全，或已删除。", host)
+            Reason.PermissionDenied -> LF("%@ 没有调用权限（HTTP 403），请检查 API key 和项目权限。", host)
             Reason.Unreachable -> LF("这台手机访问不到 %@。", host)
             Reason.BadAddress -> L("地址要用 https；这台手机和局域网里的服务可以用 http。")
             Reason.NoCredit -> LF("%@ 账户余额不足。", host)
             Reason.NoModel -> LF("%@ 上找不到 %@ 这个模型。", host, model)
             Reason.NoJSON -> L("这个模型没按要求返回 JSON，写不了纪要。换一个通用模型。")
             Reason.Deaf, Reason.Busy -> null
-            Reason.ServerError -> LF("%@ 暂时出错（HTTP %lld），稍后再试。", host, n.code ?: 0)
+            Reason.ServerError -> if (n.code == 503) LF("%@ 当前过载（HTTP 503），请稍后重试。", host)
+                else LF("%@ 暂时出错（HTTP %lld），稍后再试。", host, n.code ?: 0)
         }
     }
 
@@ -270,6 +275,7 @@ data class AICheck(
             LingException.Kind.RateLimited -> Failure(step, Reason.Busy, null)
             LingException.Kind.Http -> when {
                 e.status == 402 -> Failure(StepID.Key, Reason.NoCredit, 402)
+                e.status == 403 -> Failure(step, Reason.PermissionDenied, 403)
                 step == StepID.Hear && e.status in DEAF_CODES -> Failure(StepID.Hear, Reason.Deaf, e.status)
                 e.status == 400 || e.status == 404 ->
                     if (step == StepID.Key) Failure(StepID.Key, Reason.ServerError, e.status) else Failure(StepID.Text, Reason.NoModel, e.status)
@@ -338,6 +344,7 @@ data class AICheck(
                 Reason.Unreachable, Reason.BadAddress -> r.fail(StepID.Reach, reason, reached = false)
                 Reason.InvalidKey, Reason.NoCredit -> r.fail(StepID.Key, reason, code = if (reason == Reason.NoCredit) 402 else null)
                 Reason.MgmtKey -> r.fail(StepID.Key, reason, reached = false)
+                Reason.PermissionDenied -> r.fail(StepID.Text, reason, code = 403)
                 Reason.NoModel, Reason.NoJSON -> r.fail(StepID.Text, reason, code = 404)
                 Reason.Deaf -> r.pass(StepID.Text, 1.1).fail(StepID.Hear, reason, code = 400)
                 Reason.ServerError -> r.fail(StepID.Text, reason, code = 503)

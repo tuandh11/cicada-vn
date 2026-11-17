@@ -3,7 +3,7 @@
 Cicada 的 Android 版：把手机里播放的声音（或面对面时麦克风听到的话）变成双语字幕和实时纪要，存成和 Mac 版同一格式的会议记录。面对面时按住“按住说话”说一句，松开后手机用对方的语言读出来。方案和取舍见 [docs/android-plan.md](../docs/android-plan.md)。
 
 - 声音来源：手机里的声音（`AudioPlaybackCapture`，Android 10 起，排除知了自己；会议和通话 app 系统不让采集）或面对面（麦克风）。
-- 识别：分段发给 AI 服务的“听的模型”，一次请求返回语言、原文和译文。默认 Ling 的 Ming（`Ming-3.0-audio-flash`，片段压成 AAC 再传）；可选 Google Gemini（原生 `generateContent` 适配器，`gemini-3.8-flash`，16 kHz WAV inline audio），也可选 OpenRouter、ZenMux 或兼容 OpenAI 的自建服务。Google Gemini 不是通过 OpenAI 兼容接口调用；每个请求都用独立的 `x-goog-api-key` 头。文本和音频都走选择的服务；Gemini 3.8 Flash 只输出文本，所以“我说”使用手机自带语音。Google 当前限制单个 inline 请求总大小 20 MB；知了每段音频最多 8 秒。Ling 仍是默认和可手动切换的备用服务。其他服务推荐 Qwen 3.8 Omni Flash，比 Ming 慢 1–2 秒，片段按 WAV 传，流量大约是 AAC 的 10 倍。只有“你自己的声音”只能用 Ling。都需要一个 key（自建服务在这台手机或局域网里时可不填，也可以用 http）。和 Windows、Linux 同一套做法。
+- 识别：分段发给所选 AI 服务，一次请求返回语言、原文和译文。默认 Ling 的 Ming（`Ming-3.0-audio-flash`，片段压成 AAC 再传）；可选 Google Gemini（原生 `generateContent` 适配器）：文字翻译和音频识别默认 `gemini-2.5-flash-lite`，Meeting Notes 默认 `gemini-2.5-flash`，`gemini-3.8-flash` 保留为可选。Notes model 可以在设置里单独选择。Google Gemini 不是通过 OpenAI 兼容接口调用；每个请求都用独立的 `x-goog-api-key` 头。2.5 系列接收文本和 WAV 音频并返回文本；快速翻译关闭 thinking，Meeting Notes 保留默认 thinking。音频只发给所选服务，Gemini 失败时不会自动切换 provider。Android “我说”使用手机自带语音。Google 当前限制单个 inline 请求总大小 20 MB；知了每段音频最多 8 秒。Ling 仍是默认和可手动切换的备用服务。其他服务推荐 Qwen 3.8 Omni Flash，比 Ming 慢 1–2 秒，片段按 WAV 传，流量大约是 AAC 的 10 倍。只有“你自己的声音”只能用 Ling。都需要一个 key（自建服务在这台手机或局域网里时可不填，也可以用 http）。和 Windows、Linux 同一套做法。
 - 悬浮窗：纪要或字幕条，`FLAG_NOT_FOCUSABLE` 不抢输入，`FLAG_SECURE` 默认不出现在截图和录屏里；打开“共享屏幕时让对方看到”后显示“对方可见”。
 - 纪要、记录格式（逐字节和 Mac 一致）、提示词、文案都和 Mac 版一致；英日韩翻译直接用 `Resources/*.lproj/Localizable.strings`，Android 独有的在 `app/src/main/strings/`。
 - 检查更新：每天在后台查一次 GitHub Releases，有新版本时在首页、设置和通知里提示，点“更新”用浏览器下载 APK，由系统安装器覆盖安装（签名一致才行），不需要安装权限。

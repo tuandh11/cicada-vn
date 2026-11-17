@@ -25,7 +25,7 @@
 "%@ 余额快用完了（还剩 $%@）" = "Số dư %@ gần như cạn kiệt ($%@)";
 "%@ 秒" = "%@ giây";
 "开会用过一次后确认" = "Xác nhận sau khi sử dụng nó một lần trong một cuộc họp";
-"重新检查" = "kiểm tra lại";
+"重新检查" = "Kiểm tra lại";
 "打开系统设置" = "Mở cài đặt hệ thống";
 "怎么设置代理" = "Cách thiết lập proxy";
 "更换 key" = "Đổi khóa API";
@@ -64,7 +64,7 @@
 "会中每 45 秒更新" = "Cập nhật 45 giây một lần trong cuộc họp";
 "这个服务不支持 JSON" = "Dịch vụ này không hỗ trợ JSON.";
 "换一个模型后可用" = "Chọn mô hình khác để tiếp tục.";
-"翻译" = "Dịch thuật";
+"翻译" = "Dịch";
 "随语音识别一步翻出；不行时换 Google" = "Sử dụng nhận dạng giọng nói để tìm hiểu trong một bước; nếu cách đó không hiệu quả, hãy sử dụng Google";
 "连不上" = "Không thể kết nối";
 "填好 key 后用 %@ 翻译" = "Nhập khóa API rồi dùng %@ để dịch.";
@@ -249,7 +249,7 @@
 "%@ 这句已改给 %@" = "%@ Câu này đã được đổi thành %@";
 "导入" = "nhập khẩu";
 "欢迎使用%@" = "Chào mừng đến với %@";
-"设置" = "cài đặt";
+"设置" = "Cài đặt";
 "有新版本 %@" = "Đã có phiên bản mới %@";
 "正在记录会议" = "Ghi âm cuộc họp";
 "退出会结束这场记录，已记下的内容会保存。" = "Việc thoát sẽ kết thúc quá trình ghi này và nội dung đã ghi sẽ được lưu lại.";
@@ -386,7 +386,7 @@
 "%@（识别中…）→ %@" = "%@ (nhận dạng...) → %@";
 "自动识别 → %@" = "Tự động nhận dạng → %@";
 "等你允许使用麦克风" = "Đang chờ bạn cho phép sử dụng micrô";
-"正在听" = "lắng nghe";
+"正在听" = "Đang nghe";
 "此 Mac 不支持本机语音识别" = "Máy Mac này không hỗ trợ nhận dạng giọng nói gốc";
 "请在系统设置里允许“系统音频录制”，再重新打开知了" = "Vui lòng cho phép \"ghi âm hệ thống\" trong cài đặt hệ thống và sau đó mở lại Cicada";
 "无法读取系统音频，请在系统设置里允许“系统音频录制”" = "Không thể đọc âm thanh hệ thống, vui lòng cho phép \"ghi âm hệ thống\" trong cài đặt hệ thống";
@@ -400,7 +400,11 @@
 "%@ 连不上 · 字幕改用本机识别" = "%@ không thể kết nối · Thay vào đó hãy sử dụng nhận dạng cục bộ cho phụ đề";
 "翻译暂不可用" = "Bản dịch chưa có sẵn";
 "开始听" = "bắt đầu nghe";
-"知了" = "ZXQCICADATHƯƠNG HIỆUQXZ";
+"知了" = "Cicada VN";
+"纪要模型" = "Mô hình biên bản";
+"只用于实时纪要" = "Chỉ dùng cho biên bản trực tiếp";
+"%@ 没有调用权限（HTTP 403），请检查 API key 和项目权限。" = "%@ không có quyền gọi API (HTTP 403). Hãy kiểm tra API key và quyền của dự án.";
+"%@ 当前过载（HTTP 503），请稍后重试。" = "%@ đang quá tải (HTTP 503). Vui lòng thử lại sau.";
 "会议已自动结束" = "Cuộc họp đã tự động kết thúc";
 "显示字幕条" = "Hiển thị dải phụ đề";
 "显示实时纪要" = "Hiện biên bản trực tiếp";

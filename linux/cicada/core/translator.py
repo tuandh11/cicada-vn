@@ -162,7 +162,9 @@ class Translator:
                     return cleaned
             except LingError as e:
                 Log.d("translate ling failed: %s" % e)
-        if self._google_off:
+        config = getattr(self.ling, "config", None)
+        provider_id = config().provider.id if config is not None else None
+        if self._google_off or provider_id == "gemini":
             return None  # left out on purpose: the original only, and no word about Google failing
         if time.time() < self._google_backoff_until:
             return None

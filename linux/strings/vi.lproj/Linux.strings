@@ -54,7 +54,7 @@
 "这一步" = "bước này";
 "会议软件" = "Ứng dụng họp trực tuyến";
 "扬声器" = "Loa";
-"知了：字幕和纪要" = "Cicada: Phụ đề và biên bản";
+"知了：字幕和纪要" = "Cicada VN: Phụ đề và biên bản";
 "你的声音 · 麦克风" = "Giọng của bạn · Micrô";
 "第 4 步再用" = "Sử dụng lại ở bước 4";
 "线上的人听到译文" = "Người tham gia từ xa sẽ nghe bản dịch.";
@@ -90,7 +90,7 @@
 "继续设置" = "Tiếp tục thiết lập";
 "更早" = "trước đó";
 "M月d日" = "ngày M";
-"还差 %@ 步就能用" = "Vẫn còn những bước %@ trước khi có thể sử dụng nó.";
+"还差 %@ 步就能用" = "Còn %@ bước nữa trước khi bạn có thể sử dụng Cicada.";
 "知了把电脑里放出来的会议声音变成字幕和纪要。" = "Cicada chuyển âm thanh cuộc họp trên máy tính thành phụ đề và biên bản.";
 "按 %@ 说话，线上的人听到翻译后的声音" = "Nhấn %@ để nói và những người trực tuyến sẽ nghe thấy giọng nói được dịch.";
 "点纪要窗的麦克风说话，线上的人听到翻译后的声音" = "Chọn micrô trong cửa sổ biên bản để nói; người tham gia từ xa sẽ nghe bản dịch.";
@@ -98,7 +98,7 @@
 "只存在这台电脑上（只有你的账户能读）" = "Chỉ tồn tại trên máy tính này (chỉ tài khoản của bạn mới có thể đọc được)";
 "识别、翻译和纪要都靠它，约 1 分钟" = "Ling xử lý nhận dạng, dịch và tạo biên bản. Thường mất khoảng một phút.";
 "听一下电脑里的声音" = "Nghe thử âm thanh máy tính";
-"放一段测试声音，看音量条动起来" = "Phát âm thanh thử và kiểm tra thanh âm lượng có chuyển động.";
+"放一段测试声音，看音量条动起来" = "Phát thử âm thanh và xem thanh âm lượng có nhảy không.";
 "看看效果" = "Xem hiệu ứng";
 "一段 9 秒的英文会议，字幕和纪要一句句出来" = "Đoạn họp tiếng Anh 9 giây; phụ đề và biên bản sẽ hiện dần theo từng câu.";
 "可选" = "Tùy chọn";
@@ -176,7 +176,7 @@
 "只分享纪要" = "Chỉ chia sẻ biên bản";
 "纪要和双语全文" = "Biên bản và transcript song ngữ";
 "生成并复制" = "Tạo và sao chép";
-"更改" = "thay đổi";
+"更改" = "Thay đổi";
 "内容将上传至 cicada.indaloop.app，拿到链接的人都能看。" = "Nội dung sẽ được tải lên cicada.indaloop.app, nơi bất kỳ ai có liên kết đều có thể xem nội dung đó.";
 "用密码保护" = "Bảo vệ bằng mật khẩu";
 "换一个" = "Thay đổi cái khác";
@@ -234,7 +234,7 @@
 "需要 %@ 的 key 才能听" = "Cần khóa API %@ để nhận dạng âm thanh.";
 "%@ 的 key 无效" = "Khóa API %@ không hợp lệ.";
 "%@ 太忙，稍后再试" = "%@ Quá bận, hãy thử lại sau";
-"会议" = "cuộc họp";
+"会议" = "Cuộc họp";
 "分享者" = "Người chia sẻ";
 "分享得太频繁了，请稍后再试。" = "Được chia sẻ quá thường xuyên, vui lòng thử lại sau.";
 "密码保护" = "Bảo vệ bằng mật khẩu";

@@ -138,7 +138,7 @@ class Translator(private val ling: LingClient, private val transport: Transport 
                 cleanTranslation(out, target)?.let { return it }
             } catch (e: LingException) { Log.d("translate ling failed: ${e.message}") }
         }
-        if (googleOff || System.currentTimeMillis() < googleBackoffUntil) return null
+        if (googleOff || ling.config().provider.id == "gemini" || System.currentTimeMillis() < googleBackoffUntil) return null
         try {
             val url = "https://translate.googleapis.com/translate_a/single?client=gtx" +
                 "&sl=${enc(source)}&tl=${enc(target)}&dt=t&q=${enc(text)}"

@@ -690,11 +690,12 @@ class LingClient(
             "messages" to listOf(mapOf("role" to "system", "content" to content), mapOf("role" to "user", "content" to user)),
             "stream" to false,
         )
-        c.shape(body, maxTokens, templateKwargs = host(base) !in noTemplateKwargs)
+        c.shape(body, if (c.provider.id == "gemini" && priority != Priority.Notes) maxOf(maxTokens, 2048) else maxTokens,
+            templateKwargs = host(base) !in noTemplateKwargs, fastTranslation = priority == Priority.Translate, model = m)
         if (json) body["response_format"] = mapOf("type" to "json_object")
 
         val waits = retryWaits(priority, audio != null, patient)
-        val retryDelays = waits.ifEmpty { if (c.provider.id == "gemini") listOf(1.0) else emptyList() }
+        val retryDelays = waits.ifEmpty { if (c.provider.id == "gemini") listOf(1.0, 2.0, 4.0) else emptyList() }
         var attempt = 1
         var ticket: Long? = null
         while (true) {
@@ -722,7 +723,7 @@ class LingClient(
                     throw LingException(LingException.Kind.Hijacked)
                 }
                 val usage = root["usage"].obj()
-                Log.d("ai ${c.provider.id}: $priority ok ${(System.nanoTime() - started) / 1_000_000} ms tokens=${usage?.get("prompt_tokens")}/${usage?.get("completion_tokens")}")
+                Log.d("ai ${c.provider.id}: $priority ok ${(System.nanoTime() - started) / 1_000_000} ms finish=${root["provider_finish_reason"] ?: finish} tokens=${usage?.get("prompt_tokens")}/${usage?.get("completion_tokens")}/${usage?.get("total_tokens")} thinking=${usage?.get("reasoning_tokens")}")
                 if (rateLimitedAt != null) { rateLimitedAt = null; changed() }
                 observe(null, (System.nanoTime() - started) / 1e9, audio = audio != null, notes = notesSide)
                 return trimmed
@@ -882,17 +883,19 @@ class LingClient(
         when (res.status) {
             200 -> {}
             401 -> {
+                Log.d("ai ${config().provider.id}: HTTP 401")
                 if (!notes && keyState != KeyState.Invalid) { keyState = KeyState.Invalid; changed() }
                 throw LingException(LingException.Kind.InvalidKey)
             }
             403 -> {
+                Log.d("ai ${config().provider.id}: HTTP 403")
                 if (!gemini) {
                     if (!notes && keyState != KeyState.Invalid) { keyState = KeyState.Invalid; changed() }
                     throw LingException(LingException.Kind.InvalidKey)
                 }
                 throw LingException(LingException.Kind.Http, 403)
             }
-            429 -> throw LingException(LingException.Kind.RateLimited, 429, retryAfterSeconds(res.retryAfter))
+            429 -> { Log.d("ai ${config().provider.id}: HTTP 429 rate limited"); throw LingException(LingException.Kind.RateLimited, 429, retryAfterSeconds(res.retryAfter)) }
             else -> {
                 Log.d("ai ${config().provider.id}: HTTP ${res.status}")
                 throw LingException(LingException.Kind.Http, res.status)

@@ -21,6 +21,7 @@ object GeminiAdapter {
         val generation = linkedMapOf<String, Any?>()
         chat["temperature"]?.let { generation["temperature"] = it }
         chat["max_tokens"]?.let { generation["maxOutputTokens"] = it }
+        chat["thinking_budget"]?.let { generation["thinkingConfig"] = mapOf("thinkingBudget" to it) }
         if (chat["response_format"].obj()?.get("type").str() == "json_object") generation["responseMimeType"] = "application/json"
         val request = linkedMapOf<String, Any?>("contents" to contents)
         if (systemParts.isNotEmpty()) request["systemInstruction"] = mapOf("parts" to systemParts)
@@ -66,9 +67,11 @@ object GeminiAdapter {
                 "prompt_tokens" to u["promptTokenCount"],
                 "completion_tokens" to u["candidatesTokenCount"],
                 "total_tokens" to u["totalTokenCount"],
+                "reasoning_tokens" to u["thoughtsTokenCount"],
             ).filterValues { it != null }
         }
         val normalized = linkedMapOf<String, Any?>("choices" to listOf(mapOf("message" to mapOf("content" to text), "finish_reason" to finish)))
+        candidate["finishReason"]?.let { normalized["provider_finish_reason"] = it }
         if (!usage.isNullOrEmpty()) normalized["usage"] = usage
         return normalized
     }

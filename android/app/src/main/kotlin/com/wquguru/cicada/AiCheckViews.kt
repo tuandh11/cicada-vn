@@ -103,7 +103,7 @@ object AiCheckViews {
         return when (f.reason) {
             // A server on the local network: the proxy help has nothing to say.
             Reason.Unreachable -> if (ling.unreachableNearby()) again else listOf<Pair<String, () -> Unit>>(L("怎么设置代理") to { open(a, helpUrl()) }) + again
-            Reason.InvalidKey, Reason.MgmtKey ->
+            Reason.InvalidKey, Reason.MgmtKey, Reason.PermissionDenied ->
                 listOf<Pair<String, () -> Unit>>(L("更换 key") to changeKey) + (p.site?.let { listOf<Pair<String, () -> Unit>>(LF("打开 %@", p.name) to { open(a, it) }) } ?: emptyList())
             Reason.NoCredit -> listOf<Pair<String, () -> Unit>>(L("去充值") to { open(a, topUp(p)) }) + again
             Reason.NoModel -> recommended(p.textModels.firstOrNull()?.id, cfg.textModel)?.let { listOf<Pair<String, () -> Unit>>(LF("换成推荐的 %@", AiServiceActivity.short(it)) to { app.useRecommended("text") }) } ?: again

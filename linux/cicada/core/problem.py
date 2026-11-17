@@ -12,7 +12,7 @@ from .strings import L, LF
 # Stay until the key, the account, a model or the address changes: not the network, a busy service
 # or one that errs. DEAF is the ports' own: the service hears for us, so nothing goes on without it.
 BLOCKING = (aicheck.INVALID_KEY, aicheck.MGMT_KEY, aicheck.NO_CREDIT, aicheck.NO_MODEL,
-            aicheck.BAD_ADDRESS, aicheck.NO_JSON, aicheck.DEAF)
+            aicheck.BAD_ADDRESS, aicheck.NO_JSON, aicheck.DEAF, aicheck.PERMISSION_DENIED)
 # Only the notes and the full translations stop; the subtitles go on (the hear model is fine).
 NOTES_ONLY = (aicheck.NO_MODEL, aicheck.NO_JSON)
 UNREACHABLE_AFTER = 120.0
@@ -32,6 +32,7 @@ def title(reason: str | None, service: str, text_model: str, hear_model: str) ->
         return None
     return {aicheck.INVALID_KEY: lambda: LF("%@ 的 key 用不了", service),
             aicheck.MGMT_KEY: lambda: LF("%@ 的 key 用不了", service),
+            aicheck.PERMISSION_DENIED: lambda: LF("%@ 没有调用权限（HTTP 403），请检查 API key 和项目权限。", service),
             aicheck.NO_CREDIT: lambda: LF("%@ 账户余额不足。", service),
             aicheck.NO_MODEL: lambda: LF("%@ 上找不到 %@ 这个模型。", service, text_model),
             aicheck.DEAF: lambda: LF("%@ 听不了声音。", hear_model or service)}.get(reason, lambda: L("AI 服务的设置要改一下"))()

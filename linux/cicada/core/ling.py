@@ -777,11 +777,13 @@ class LingClient:
         body = {"model": model,
                 "messages": [{"role": "system", "content": content}, {"role": "user", "content": user}],
                 "stream": False}
-        c.shape(body, max_tokens, template_kwargs=base not in self._plain_bases)
+        c.shape(body, max(max_tokens, 2048) if c.provider.id == "gemini" and priority != NOTES else max_tokens,
+                template_kwargs=base not in self._plain_bases,
+                fast_translation=priority == TRANSLATE, model=model)
         if json:
             body["response_format"] = {"type": "json_object"}
         waits = retry_waits(priority, audio is not None, patient)
-        retry_delays = waits or ([1.0] if c.provider.id == "gemini" else [])
+        retry_delays = waits or ([1.0, 2.0, 4.0] if c.provider.id == "gemini" else [])
         attempt = 1
         name = PRIORITY_NAMES[priority]
         ticket = None
@@ -812,8 +814,8 @@ class LingClient:
                     Log.d("ling: %s search-style reply dropped" % name)
                     raise LingError(LingError.HIJACKED)
                 usage = obj(root.get("usage")) or {}
-                Log.d("ai %s: %s ok %d ms tokens=%s/%s" % (c.provider.id, name, (time.monotonic() - started) * 1000,
-                                                           usage.get("prompt_tokens"), usage.get("completion_tokens")))
+                Log.d("ai %s: %s ok %d ms finish=%s tokens=%s/%s/%s thinking=%s" % (c.provider.id, name, (time.monotonic() - started) * 1000,
+                    root.get("provider_finish_reason") or finish, usage.get("prompt_tokens"), usage.get("completion_tokens"), usage.get("total_tokens"), usage.get("reasoning_tokens")))
                 if self.rate_limited_at is not None:
                     self.rate_limited_at = None
                     self._changed()
@@ -959,11 +961,13 @@ class LingClient:
             Log.d("ling: network error %s" % type(e).__name__)
             raise LingError(LingError.NETWORK) from None
         if res.status == 401 or (res.status == 403 and not gemini):
+            Log.d("ai %s: HTTP %d" % (self.config().provider.id, res.status))
             if not notes and self.key_state != INVALID:
                 self.key_state = INVALID
                 self._changed()
             raise LingError(LingError.INVALID_KEY)
         if res.status == 429:
+            Log.d("ai %s: HTTP 429 rate limited" % self.config().provider.id)
             raise LingError(LingError.RATE_LIMITED, retry_after=retry_after_seconds(getattr(res, "retry_after", None)))
         if res.status != 200:
             Log.d("ai %s: HTTP %d" % (self.config().provider.id, res.status))

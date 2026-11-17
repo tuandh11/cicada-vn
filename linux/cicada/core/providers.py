@@ -38,6 +38,7 @@ class Provider:
     site: str | None            # where to create a key
     text_models: tuple = ()
     hear_models: tuple = ()
+    notes_models: tuple = ()   # a provider may recommend a different model for long-form notes
     voice_models: tuple = ()    # empty: this service can't speak into the room here
     voices: tuple = ()          # of `voice_models` (Gemini TTS: the same names in every language)
     clones: bool = False
@@ -59,7 +60,9 @@ LING = Provider(
 # Native Google API schema, handled by gemini.py (not OpenAI-compatible).
 GEMINI = Provider(
     "gemini", "Google Gemini", "https://generativelanguage.googleapis.com/v1beta/", "https://aistudio.google.com/api-keys",
-    text_models=(Model("gemini-3.8-flash"),), hear_models=(Model("gemini-3.8-flash"),))
+    text_models=(Model("gemini-2.5-flash-lite"), Model("gemini-2.5-flash"), Model("gemini-3.8-flash")),
+    hear_models=(Model("gemini-2.5-flash-lite"), Model("gemini-2.5-flash"), Model("gemini-3.8-flash")),
+    notes_models=(Model("gemini-2.5-flash"), Model("gemini-2.5-flash-lite"), Model("gemini-3.8-flash")))
 
 OPENROUTER = Provider(
     "openrouter", "OpenRouter", "https://openrouter.ai/api/v1/", "https://openrouter.ai/settings/keys",
@@ -158,6 +161,9 @@ def thought(root: dict) -> bool:
     n = details.get("reasoning_tokens")
     if isinstance(n, (int, float)) and not isinstance(n, bool) and n > 0:
         return True
+    n = (obj((root or {}).get("usage")) or {}).get("reasoning_tokens")
+    if isinstance(n, (int, float)) and not isinstance(n, bool) and n > 0:
+        return True
     content = message.get("content")
     return isinstance(content, str) and "<think>" in content
 
@@ -189,7 +195,7 @@ class AIConfig:
     @property
     def notes_apart(self) -> bool:
         """Notes go somewhere translation doesn't: they get their own check, result and start gate."""
-        return self.provider.id == "custom" and (self.notes_model is not None or self.notes_base is not None
+        return self.provider.id in ("custom", "gemini") and (self.notes_model is not None or self.notes_base is not None
                                                  or self.notes_own_service)
 
     @property
@@ -226,7 +232,8 @@ class AIConfig:
             return (CloudVoice(self.custom_voice, ""),) if self.custom_voice else ()
         return self.provider.voices
 
-    def shape(self, body: dict, max_tokens: int, template_kwargs: bool = True) -> None:
+    def shape(self, body: dict, max_tokens: int, template_kwargs: bool = True,
+              fast_translation: bool = False, model: str | None = None) -> None:
         """Each service turns thinking off its own way (AIConfig.shape on the Mac). A custom service
         gets `chat_template_kwargs` (vLLM, SGLang and llama.cpp pass it to the chat template, which
         is how Qwen3 turns thinking off); `template_kwargs` False leaves it out for a server that
@@ -239,6 +246,9 @@ class AIConfig:
             body["reasoning"] = {"enabled": False}
         elif self.provider.id == "custom" and template_kwargs:
             body["chat_template_kwargs"] = {"enable_thinking": False}
+        elif self.provider.id == "gemini" and fast_translation and (model or self.text_model).startswith("gemini-2.5-"):
+            body["thinking_budget"] = 0
+
 
     def audio_part(self, wav: bytes, model: str) -> dict:
         """One WAV in a user message: Ming takes a data URL; the others the standard `input_audio`,
@@ -251,6 +261,11 @@ class AIConfig:
         return {"type": "input_audio", "input_audio": {"data": b64, "format": "wav"}}
 
 
+def notes_model_key(provider_id: str) -> str:
+    """Keep legacy custom.notes storage; other providers use <provider>.notes."""
+    return "custom.notes" if provider_id == "custom" else provider_id + ".notes"
+
+
 def config_from(settings) -> AIConfig:
     """The service, its address and models from the app's settings (Settings.swift › aiConfig)."""
     p = named(settings.aiProvider)
@@ -259,8 +274,10 @@ def config_from(settings) -> AIConfig:
         text = settings.model if settings.model in [m.id for m in p.text_models] else p.text_models[0].id
         return AIConfig(p, p.base, text, p.hear_models[0].id, p.voice_models[0].id, p.base)
     if p.id == "gemini":
-        return AIConfig(p, p.base, models.get(p.id) or p.text_models[0].id,
-                        hears.get(p.id) or p.hear_models[0].id, hear_base=p.base)
+        text = models.get(p.id) or p.text_models[0].id
+        notes = models.get(notes_model_key(p.id)) or (p.notes_models[0].id if p.notes_models else text)
+        return AIConfig(p, p.base, text, hears.get(p.id) or p.hear_models[0].id,
+                        hear_base=p.base, notes_model=notes if notes != text else None)
     if p.id == "custom":
         base = custom_base(settings.aiCustomBase)
         voice = (voices.get("custom") or "").strip()
@@ -273,7 +290,7 @@ def config_from(settings) -> AIConfig:
         # own), and with 另一个服务 their address (empty or the same: translation's). Off keeps the
         # address typed, so switching back and forth loses nothing.
         text = (models.get("custom") or "").strip()
-        notes_model = (models.get("custom.notes") or "").strip()
+        notes_model = (models.get(notes_model_key(p.id)) or "").strip()
         own = bool(getattr(settings, "aiCustomNotesOwn", False))
         notes_typed = (getattr(settings, "aiCustomNotesBase", "") or "").strip() if own else ""
         notes_base = custom_base(notes_typed) if notes_typed else None

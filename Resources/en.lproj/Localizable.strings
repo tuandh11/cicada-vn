@@ -1544,3 +1544,7 @@
 "标记这个人叫什么" = "Name this person";
 "标记人名…" = "Name…";
 "记住这个声音…" = "Remember This Voice…";
+"纪要模型" = "Meeting notes model";
+"只用于实时纪要" = "Used only for meeting notes";
+"%@ 没有调用权限（HTTP 403），请检查 API key 和项目权限。" = "%@ does not have API access (HTTP 403). Check the API key and project permissions.";
+"%@ 当前过载（HTTP 503），请稍后重试。" = "%@ is overloaded (HTTP 503). Try again later.";

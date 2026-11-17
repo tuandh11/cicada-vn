@@ -71,7 +71,7 @@ def set_autostart(on: bool, launcher: str) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     # --background: a login start stays in the top bar; opening 知了 by hand shows its window.
     with open(path, "w", encoding="utf-8") as f:
-        f.write("[Desktop Entry]\nType=Application\nName=Cicada\nName[zh_CN]=知了\n"
+        f.write("[Desktop Entry]\nType=Application\nName=Cicada VN\nName[vi]=Cicada VN\nName[zh_CN]=知了\n"
                 "Exec=%s%s --background\nIcon=cicada\nTerminal=false\nNoDisplay=true\nX-GNOME-Autostart-enabled=true\n"
                 % (launcher, " --dev" if Paths.dev else ""))
 
@@ -1221,6 +1221,9 @@ class SettingsWindow(Gtk.Window):
         rows = [ui.prow(L("听的模型"), self._model_menu("hear", c.hear_model, p.hear_models, app.ling.hear_catalog),
                         L("听对方和“我说”都用它")),
                 ui.prow(L("文字模型"), self._model_menu("text", c.text_model, p.text_models, app.ling.text_catalog), L("纪要和整句翻译"))]
+        if p.notes_models:
+            rows.append(ui.prow(L("纪要模型"), self._model_menu("notes", c.for_notes.text_model, p.notes_models,
+                                                                  app.ling.text_catalog), L("只用于实时纪要")))
         if p.has_voices:
             rows.append(ui.prow(L("声音模型"), self._model_menu("voice", c.voice_model, p.voice_models, []), L("同传念给对方")))
         return rows

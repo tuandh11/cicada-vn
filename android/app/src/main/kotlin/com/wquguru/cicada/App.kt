@@ -536,8 +536,9 @@ class CicadaApp : Application() {
         val p = s.aiProvider
         if (kind == "text" && p == "ling") s.model = model.ifEmpty { LingClient.DEFAULT_MODEL }
         else if (kind == "notes") {
-            // The custom service's notes model; empty: the translation model.
-            if (model.isNotEmpty()) s.aiModels[Providers.NOTES_MODEL] = model else s.aiModels.remove(Providers.NOTES_MODEL)
+            // Custom keeps its existing key; Gemini stores a separate model without changing old settings.
+            val key = Providers.notesModelKey(p)
+            if (model.isNotEmpty()) s.aiModels[key] = model else s.aiModels.remove(key)
         } else {
             val table = when (kind) { "text" -> s.aiModels; "hear" -> s.aiHearModels; "voice" -> s.aiVoiceModels; else -> return }
             if (model.isNotEmpty()) table[p] = model else table.remove(p)

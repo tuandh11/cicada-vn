@@ -49,6 +49,8 @@ def request(chat: dict) -> dict:
         generation["temperature"] = chat["temperature"]
     if "max_tokens" in chat:
         generation["maxOutputTokens"] = chat["max_tokens"]
+    if "thinking_budget" in chat:
+        generation["thinkingConfig"] = {"thinkingBudget": chat["thinking_budget"]}
     if (chat.get("response_format") or {}).get("type") == "json_object":
         generation["responseMimeType"] = "application/json"
     if generation:
@@ -72,9 +74,11 @@ def response(root: dict) -> dict:
     if isinstance(usage_meta, dict):
         usage = {dst: usage_meta[src] for src, dst in (("promptTokenCount", "prompt_tokens"),
                                                         ("candidatesTokenCount", "completion_tokens"),
-                                                        ("totalTokenCount", "total_tokens"))
+                                                        ("totalTokenCount", "total_tokens"),
+                                                        ("thoughtsTokenCount", "reasoning_tokens"))
                  if isinstance(usage_meta.get(src), int)}
-    result = {"choices": [{"message": {"content": text}, "finish_reason": finish}]}
+    result = {"choices": [{"message": {"content": text}, "finish_reason": finish}],
+              "provider_finish_reason": candidate.get("finishReason")}
     if usage:
         result["usage"] = usage
     return result
