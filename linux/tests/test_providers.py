@@ -148,6 +148,67 @@ class Table(Base):
         check = aicheck.AICheck(); check.fail("text", aicheck.SERVER_ERROR, 503)
         self.assertIn("503", check.message("Google Gemini", "google", "m", "h"))
         self.assertIn("过载", check.message("Google Gemini", "google", "m", "h"))
+        timeout = aicheck.AICheck(); timeout.fail("reach", aicheck.TIMEOUT)
+        self.assertIn("超时", timeout.message("Google Gemini", "google", "m", "h"))
+
+    def test_gemini_http_503_then_retry_timeout_preserves_http_failure(self):
+        from cicada.core.ling import Clock
+
+        class StepClock(Clock):
+            def __init__(self): self.t = 0.0
+            def now(self): return self.t
+            def wait(self, condition, seconds): self.t += seconds or 0.0
+
+        class Sequence(Fake):
+            def __init__(self):
+                super().__init__(lambda _url, _body: Response(503, "{}"))
+                self.calls = 0
+            def send(self, url, method, body, headers, timeout):
+                self.calls += 1
+                if self.calls == 1:
+                    return super().send(url, method, body, headers, timeout)
+                raise TimeoutError("simulated retry timeout")
+
+        fake = Sequence()
+        ling, _ = self.client(fake, provider="gemini", key="AIza-test-gemini")
+        ling.clock = StepClock()
+        ling.check()
+        self.assertEqual(2, fake.calls)
+        self.assertEqual(("text", aicheck.SERVER_ERROR, 503), ling.check_result.failure)
+        self.assertEqual(aicheck.OK, ling.check_result["reach"].kind)
+        self.assertEqual(aicheck.OK, ling.check_result["key"].kind)
+        self.assertEqual("failed", ling.key_state)
+        with open(Paths.log(), encoding="utf-8") as f:
+            log = f.read()
+        self.assertIn("TimeoutError", log)
+        self.assertIn("Traceback", log)
+        self.assertNotIn("AIza-test-gemini", log)
+
+    def test_gemini_internal_exception_is_not_reported_as_unreachable(self):
+        fake = Fake(lambda _url, _body: (_ for _ in ()).throw(TypeError("simulated internal bug")))
+        ling, _ = self.client(fake, provider="gemini", key="AIza-test-gemini")
+        ling.check()
+        self.assertEqual(("text", aicheck.INTERNAL_ERROR, None), ling.check_result.failure)
+        self.assertNotEqual(aicheck.UNREACHABLE, ling.check_result.reason)
+        with open(Paths.log(), encoding="utf-8") as f:
+            log = f.read()
+        self.assertIn("TypeError", log)
+        self.assertIn("Traceback", log)
+        self.assertNotIn("AIza-test-gemini", log)
+
+    def test_gemini_timeout_is_distinct_from_network_failure(self):
+        fake = Fake(lambda _url, _body: (_ for _ in ()).throw(TimeoutError("simulated timeout")))
+        ling, _ = self.client(fake, provider="gemini", key="AIza-test-gemini")
+        ling.check()
+        self.assertEqual(("reach", aicheck.TIMEOUT, None), ling.check_result.failure)
+        self.assertNotEqual(aicheck.UNREACHABLE, ling.check_result.reason)
+
+    def test_gemini_invalid_response_is_distinct_from_network_failure(self):
+        fake = Fake(lambda _url, _body: Response(200, "not json"))
+        ling, _ = self.client(fake, provider="gemini", key="AIza-test-gemini")
+        ling.check()
+        self.assertEqual(("text", aicheck.INVALID_RESPONSE, None), ling.check_result.failure)
+        self.assertNotEqual(aicheck.UNREACHABLE, ling.check_result.reason)
 
     def test_gemini_api_statuses_and_transient_retries(self):
         from cicada.core.ling import Clock

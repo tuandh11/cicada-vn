@@ -57,7 +57,7 @@ def actions(app, change_key, recheck_in_step: bool = True) -> list:
         if rec is None:
             return [(L("重新检查"), app.recheck)]
         return [(LF("换成推荐的 %@", rec), lambda: app.use_recommended(kind))]
-    if reason == aicheck.SERVER_ERROR:
+    if reason in (aicheck.SERVER_ERROR, aicheck.TIMEOUT):
         return [(L("重新检查"), app.recheck)]
     return []
 

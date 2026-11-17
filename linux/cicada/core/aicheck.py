@@ -18,9 +18,11 @@ from .strings import L, LF
 
 STEPS = ("reach", "key", "text", "hear")
 
-UNREACHABLE, BAD_ADDRESS, INVALID_KEY, MGMT_KEY, PERMISSION_DENIED, NO_CREDIT, NO_MODEL, NO_JSON, DEAF, BUSY, SERVER_ERROR = (
-    "unreachable", "badAddress", "invalidKey", "mgmtKey", "permissionDenied", "noCredit", "noModel", "noJSON", "deaf", "busy", "serverError")
-REASONS = (UNREACHABLE, BAD_ADDRESS, INVALID_KEY, MGMT_KEY, PERMISSION_DENIED, NO_CREDIT, NO_MODEL, NO_JSON, DEAF, BUSY, SERVER_ERROR)
+UNREACHABLE, TIMEOUT, BAD_ADDRESS, INVALID_KEY, MGMT_KEY, PERMISSION_DENIED, NO_CREDIT, NO_MODEL, NO_JSON, INVALID_RESPONSE, INTERNAL_ERROR, DEAF, BUSY, SERVER_ERROR = (
+    "unreachable", "timeout", "badAddress", "invalidKey", "mgmtKey", "permissionDenied", "noCredit", "noModel", "noJSON",
+    "invalidResponse", "internalError", "deaf", "busy", "serverError")
+REASONS = (UNREACHABLE, TIMEOUT, BAD_ADDRESS, INVALID_KEY, MGMT_KEY, PERMISSION_DENIED, NO_CREDIT, NO_MODEL, NO_JSON,
+           INVALID_RESPONSE, INTERNAL_ERROR, DEAF, BUSY, SERVER_ERROR)
 
 RUNNING, OK, BUSY_STATE, FAIL, SKIPPED, UNTESTED = "running", "ok", "busy", "fail", "skipped", "untested"
 
@@ -136,7 +138,7 @@ class AICheck:
         """Nothing AI works: the service can't be reached, or won't take the key. A hear model at an
         address of its own that can't be reached leaves the text model working."""
         f = self.failure
-        return f is not None and f[0] != "hear" and f[1] in (UNREACHABLE, BAD_ADDRESS, INVALID_KEY, MGMT_KEY, NO_CREDIT)
+        return f is not None and f[0] != "hear" and f[1] in (UNREACHABLE, TIMEOUT, BAD_ADDRESS, INVALID_KEY, MGMT_KEY, NO_CREDIT)
 
     def fail(self, step: str, reason: str, code: int | None = None, reached: bool = True) -> None:
         """`step` failed and the ones after it were never reached. `reached`: a reply came back, so
@@ -178,6 +180,7 @@ class AICheck:
         reason, code = f[1], f[2]
         return {
             UNREACHABLE: lambda: LF("这台电脑访问不到 %@。", host),
+            TIMEOUT: lambda: LF("请求 %@ 超时，请检查服务状态后重试。", service),
             BAD_ADDRESS: lambda: L("地址要用 https；这台电脑和局域网里的服务可以用 http。"),
             INVALID_KEY: lambda: LF("%@ 说这个 key 无效，可能没复制全，或已删除。", service),
             PERMISSION_DENIED: lambda: LF("%@ 没有调用权限（HTTP 403），请检查 API key 和项目权限。", service),
@@ -185,6 +188,8 @@ class AICheck:
             NO_CREDIT: lambda: LF("%@ 账户余额不足。", service),
             NO_MODEL: lambda: LF("%@ 上找不到 %@ 这个模型。", service, text_model),
             NO_JSON: lambda: L("这个服务不支持 JSON，纪要写不了；翻译照常。"),
+            INVALID_RESPONSE: lambda: LF("%@ 返回了空响应或无法识别的响应。", service),
+            INTERNAL_ERROR: lambda: LF("检查 %@ 时应用内部出错；详细信息已写入诊断日志。", service),
             DEAF: lambda: LF("%@ 听不了声音。", hear_model or service),  # no hear model yet: the service
             BUSY: lambda: LF("%@ 现在很忙，key 没问题。开会时会自动重试。", service),
             SERVER_ERROR: lambda: LF("%@ 当前过载（HTTP 503），请稍后重试。", service) if code == 503 else
@@ -286,12 +291,16 @@ def classify(e: LingError, at: str, audio: bool = False):
     service. `at` is the step the request was proving; `audio`: it carried audio for the hear model."""
     from .ling import LingError  # here: ling.py imports this module
     k = e.kind
-    if k in (LingError.NETWORK, LingError.TIMEOUT):
+    if k == LingError.NETWORK:
         return "reach", UNREACHABLE, None
+    if k == LingError.TIMEOUT:
+        return "reach", TIMEOUT, None
     if k == LingError.INVALID_KEY:
         return "key", INVALID_KEY, None
     if k == LingError.RATE_LIMITED:
         return at, BUSY, None
+    if k in (LingError.PARSE, LingError.HIJACKED):
+        return at, INVALID_RESPONSE, None
     if k != LingError.HTTP:
         return None  # no key, a search essay, an unreadable reply
     code = e.status
@@ -362,12 +371,16 @@ def simulated(reason: str) -> AICheck:
         r["hear"] = State(BUSY_STATE)
     elif reason in (UNREACHABLE, BAD_ADDRESS):
         r.fail("reach", reason, reached=False)
+    elif reason == TIMEOUT:
+        r.fail("reach", reason)
     elif reason in (INVALID_KEY, NO_CREDIT, PERMISSION_DENIED):
         r.fail("key", reason, 402 if reason == NO_CREDIT else 403 if reason == PERMISSION_DENIED else None)
     elif reason == MGMT_KEY:
         r.fail("key", reason, reached=False)
     elif reason in (NO_MODEL, NO_JSON):
         r.fail("text", reason, 404)
+    elif reason in (INVALID_RESPONSE, INTERNAL_ERROR):
+        r.fail("text", reason)
     elif reason == DEAF:
         r.pass_up_to("text", 1.2)
         r.fail("hear", reason, 400)

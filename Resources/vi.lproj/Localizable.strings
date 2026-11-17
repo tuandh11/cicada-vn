@@ -405,6 +405,11 @@
 "只用于实时纪要" = "Chỉ dùng cho biên bản trực tiếp";
 "%@ 没有调用权限（HTTP 403），请检查 API key 和项目权限。" = "%@ không có quyền gọi API (HTTP 403). Hãy kiểm tra API key và quyền của dự án.";
 "%@ 当前过载（HTTP 503），请稍后重试。" = "%@ đang quá tải (HTTP 503). Vui lòng thử lại sau.";
+"%@ 返回了空响应或无法识别的响应。" = "%@ trả về phản hồi trống hoặc không hợp lệ.";
+"检查 %@ 时应用内部出错；详细信息已写入诊断日志。" = "Ứng dụng gặp lỗi nội bộ khi kiểm tra %@. Chi tiết đã được ghi vào nhật ký chẩn đoán.";
+"请求 %@ 超时，请检查服务状态后重试。" = "Yêu cầu tới %@ quá thời gian chờ. Hãy kiểm tra trạng thái dịch vụ rồi thử lại.";
+"收到 %@ 响应后可用" = "Có thể sử dụng sau khi nhận được phản hồi từ %@";
+"请求超时" = "Yêu cầu quá thời gian chờ";
 "会议已自动结束" = "Cuộc họp đã tự động kết thúc";
 "显示字幕条" = "Hiển thị dải phụ đề";
 "显示实时纪要" = "Hiện biên bản trực tiếp";

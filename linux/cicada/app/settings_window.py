@@ -1057,7 +1057,8 @@ class SettingsWindow(Gtk.Window):
         if not c.hear_model:
             hstate, htrail = "", None
         elif hear_failed:
-            hstate, htrail = "error", L("暂时连不上") if f[1] == aicheck.UNREACHABLE else L("模型用不了")
+            hstate, htrail = "error", L("请求超时") if f[1] == aicheck.TIMEOUT else \
+                L("暂时连不上") if f[1] == aicheck.UNREACHABLE else L("模型用不了")
         elif hear_st.kind == aicheck.OK:
             hstate = "ok"
             htrail = LF("%@ 秒", "%.1f" % hear_st.seconds) if hear_st.seconds is not None else None
@@ -1163,7 +1164,8 @@ class SettingsWindow(Gtk.Window):
         notes_on = text_on and reason != aicheck.NO_JSON
         hear_on = on and ling.hears is not False
         uses = LF("用 %@", name)
-        later = ((LF("连上 %@ 后可用", name) if reason == aicheck.UNREACHABLE else L("换好 key 后可用")) if down
+        later = ((LF("收到 %@ 响应后可用", name) if reason == aicheck.TIMEOUT else
+                  LF("连上 %@ 后可用", name) if reason == aicheck.UNREACHABLE else L("换好 key 后可用")) if down
                  else L("填好 key 后可用"))
         off = L("暂不可用") if ling.has_key else L("需要 key")
         rows = []

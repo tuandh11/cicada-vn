@@ -32,7 +32,7 @@ class Rules(unittest.TestCase):
     def test_classify(self):
         c = aicheck.classify
         self.assertEqual(("reach", "unreachable", None), c(LingError(LingError.NETWORK), "text"))
-        self.assertEqual(("reach", "unreachable", None), c(LingError(LingError.TIMEOUT), "hear", True))
+        self.assertEqual(("reach", aicheck.TIMEOUT, None), c(LingError(LingError.TIMEOUT), "hear", True))
         self.assertEqual(("key", "invalidKey", None), c(LingError(LingError.INVALID_KEY), "text"))
         self.assertEqual(("text", "busy", None), c(LingError(LingError.RATE_LIMITED), "text"))
         self.assertEqual(("hear", "busy", None), c(LingError(LingError.RATE_LIMITED), "hear", True))
@@ -44,8 +44,9 @@ class Rules(unittest.TestCase):
         for code in (400, 404, 415, 422):
             self.assertEqual(("hear", "deaf", code), c(LingError(LingError.HTTP, code), "hear", True))
         self.assertEqual(("hear", "serverError", 500), c(LingError(LingError.HTTP, 500), "hear", True))
-        for kind in (LingError.NO_KEY, LingError.HIJACKED, LingError.PARSE):
-            self.assertIsNone(c(LingError(kind), "text"))
+        self.assertIsNone(c(LingError(LingError.NO_KEY), "text"))
+        for kind in (LingError.HIJACKED, LingError.PARSE):
+            self.assertEqual(("text", aicheck.INVALID_RESPONSE, None), c(LingError(kind), "text"))
 
     def test_a_failed_step_skips_the_rest(self):
         r = AICheck()
@@ -231,7 +232,7 @@ class Checks(Base):
 
     def test_a_missing_text_model(self):
         ling, _ = self.client(service(text=404), aiModels={"zenmux": "no/such"})
-        self.assertEqual(UNREACHABLE, ling.check())
+        self.assertEqual("failed", ling.check())
         self.assertEqual(("text", "noModel", 404), ling.check_result.failure)
         self.assertEqual(["ok", "ok", "fail", "skipped"], kinds(ling.check_result))
         self.assertTrue(ling.usable)

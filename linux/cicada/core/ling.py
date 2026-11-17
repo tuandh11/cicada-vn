@@ -4,9 +4,11 @@ from __future__ import annotations
 import io
 import os
 import random
+import re
 import socket
 import threading
 import time
+import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -88,8 +90,25 @@ class AIKey:
 SPEAK, TRANSLATE, NOTES = 0, 1, 2
 PRIORITY_NAMES = {SPEAK: "speak", TRANSLATE: "translate", NOTES: "notes"}
 
+
+def _exception_trace(error: BaseException) -> str:
+    """Full traceback without secrets; traceback formatting never includes request locals or audio."""
+    text = "".join(traceback.format_exception(type(error), error, error.__traceback__))
+    text = re.sub(r"AIza[0-9A-Za-z_-]{20,}", "[REDACTED]", text)
+    text = re.sub(r"(?i)(x-goog-api-key|authorization)(['\"]?\s*[:=]\s*['\"]?)[^\s,'\"]+",
+                  r"\1\2[REDACTED]", text)
+    text = re.sub(r"(?i)(Bearer\s+)[A-Za-z0-9._~+/=-]+", r"\1[REDACTED]", text)
+    text = re.sub(r"(https?://)[^/@\s:]+:[^/@\s]+@", r"\1[REDACTED]@", text)
+    return text.rstrip()
+
+
+def _log_exception(provider: str, operation: str, error: BaseException) -> None:
+    Log.d("ai %s: %s exception %s\n%s" %
+          (provider, operation, type(error).__name__, _exception_trace(error)))
+
 # Key states.
-NONE, UNCHECKED, CHECKING, OK, INVALID, UNREACHABLE = "none", "unchecked", "checking", "ok", "invalid", "unreachable"
+NONE, UNCHECKED, CHECKING, OK, INVALID, UNREACHABLE, FAILED = (
+    "none", "unchecked", "checking", "ok", "invalid", "unreachable", "failed")
 
 
 class LingError(Exception):
@@ -387,8 +406,8 @@ class LingClient:
         """aicheck.classify, except that a hear model at an address of its own that can't be reached
         stops at the hear step: the text model's address may be fine."""
         cl = aicheck.classify(e, at, audio)
-        if audio and cl is not None and cl[1] == aicheck.UNREACHABLE and self.config().own_hear_address:
-            return "hear", aicheck.UNREACHABLE, None
+        if audio and cl is not None and cl[1] in (aicheck.UNREACHABLE, aicheck.TIMEOUT) and self.config().own_hear_address:
+            return "hear", cl[1], None
         return cl
 
     def key_changed(self) -> None:
@@ -486,8 +505,9 @@ class LingClient:
                         r.fail("text", aicheck.NO_JSON, e.status)
         except LingError as e:
             self._failed(r, aicheck.classify(e, "text"), "text")
-        except Exception:  # noqa: BLE001
-            r.fail("reach", aicheck.UNREACHABLE)
+        except Exception as e:  # noqa: BLE001
+            _log_exception(c.provider.id, "text check", e)
+            r.fail("text", aicheck.INTERNAL_ERROR)
         if r.failure is not None or c.is_ling:
             return r  # Ling's hearing is Ming: a meeting proves it, no probe
         if not c.hear_model:
@@ -505,8 +525,9 @@ class LingClient:
                     r["hear"] = aicheck.State(aicheck.OK, time.monotonic() - started)  # it answered: it took the audio
                 else:
                     self._failed(r, self._classify(e, "hear", audio=True), "hear")
-            except Exception:  # noqa: BLE001
-                r.fail("hear" if c.own_hear_address else "reach", aicheck.UNREACHABLE)
+            except Exception as e:  # noqa: BLE001
+                _log_exception(c.provider.id, "audio check", e)
+                r.fail("hear", aicheck.INTERNAL_ERROR)
         if c.provider.id == "openrouter" and r.failure is None:
             r.balance = aicheck.balance(self._get_json("key", k), self._get_json("credits", k))
         if r.failure is None or r.failure[0] == "hear":  # the menus want the models even when the hear one is deaf
@@ -562,8 +583,9 @@ class LingClient:
         except LingError as e:
             _, reason, code = aicheck.classify(e, "text") or ("text", aicheck.SERVER_ERROR, None)
             result = aicheck.State(aicheck.FAIL, reason=reason, code=code)
-        except Exception:  # noqa: BLE001
-            result = aicheck.State(aicheck.FAIL, reason=aicheck.UNREACHABLE)
+        except Exception as e:  # noqa: BLE001
+            _log_exception(config.provider.id, "notes check", e)
+            result = aicheck.State(aicheck.FAIL, reason=aicheck.INTERNAL_ERROR)
         if c.base != config.base:
             self.fetch_notes_catalog()
         return result
@@ -610,8 +632,10 @@ class LingClient:
         f = r.failure
         if f is not None and f[1] in (aicheck.INVALID_KEY, aicheck.MGMT_KEY):
             self.key_state = INVALID
-        elif f is not None and f[0] != "hear" and f[1] != aicheck.BUSY:
+        elif f is not None and f[0] != "hear" and f[1] == aicheck.UNREACHABLE:
             self.key_state = UNREACHABLE
+        elif f is not None and f[0] != "hear":
+            self.key_state = FAILED
         elif r.at is not None and not r.running:
             self.key_state = OK
             for s in ("reach", "key", "text"):
@@ -785,6 +809,7 @@ class LingClient:
         waits = retry_waits(priority, audio is not None, patient)
         retry_delays = waits or ([1.0, 2.0, 4.0] if c.provider.id == "gemini" else [])
         attempt = 1
+        last_retryable: LingError | None = None
         name = PRIORITY_NAMES[priority]
         ticket = None
         while True:
@@ -827,7 +852,17 @@ class LingClient:
                 self.observe(e, audio=audio is not None, notes=notes_side)
                 transient_server_error = c.provider.id == "gemini" and e.kind == LingError.HTTP and e.status in (500, 503)
                 if e.kind != LingError.RATE_LIMITED and not transient_server_error:
+                    if last_retryable is not None and e.kind in (LingError.NETWORK, LingError.TIMEOUT):
+                        if last_retryable.kind == LingError.RATE_LIMITED:
+                            Log.d("ai %s: retry after HTTP 429 ended with %s; preserving the HTTP failure" %
+                                  (c.provider.id, e.kind))
+                            raise LingError(LingError.RATE_LIMITED,
+                                            retry_after=last_retryable.retry_after) from e
+                        Log.d("ai %s: retry after HTTP %d ended with %s; preserving the HTTP failure" %
+                              (c.provider.id, last_retryable.status, e.kind))
+                        raise LingError(LingError.HTTP, last_retryable.status) from e
                     raise
+                last_retryable = e
                 backoff = retry_delays[min(attempt - 1, len(retry_delays) - 1)] if retry_delays else 1.0
                 wait = self._rate_limited(backoff,
                                           e.retry_after if e.kind == LingError.RATE_LIMITED else None, base=c.base)
@@ -955,11 +990,12 @@ class LingClient:
         not translation's."""
         try:
             res = self.transport.send(url, "POST", payload, self._headers(k, gemini), timeout)
-        except TimeoutError:
-            raise LingError(LingError.TIMEOUT) from None
+        except TimeoutError as e:
+            _log_exception(self.config().provider.id, "request timeout", e)
+            raise LingError(LingError.TIMEOUT) from e
         except OSError as e:
-            Log.d("ling: network error %s" % type(e).__name__)
-            raise LingError(LingError.NETWORK) from None
+            _log_exception(self.config().provider.id, "network request", e)
+            raise LingError(LingError.NETWORK) from e
         if res.status == 401 or (res.status == 403 and not gemini):
             Log.d("ai %s: HTTP %d" % (self.config().provider.id, res.status))
             if not notes and self.key_state != INVALID:

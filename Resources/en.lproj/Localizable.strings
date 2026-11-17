@@ -1548,3 +1548,8 @@
 "只用于实时纪要" = "Used only for meeting notes";
 "%@ 没有调用权限（HTTP 403），请检查 API key 和项目权限。" = "%@ does not have API access (HTTP 403). Check the API key and project permissions.";
 "%@ 当前过载（HTTP 503），请稍后重试。" = "%@ is overloaded (HTTP 503). Try again later.";
+"%@ 返回了空响应或无法识别的响应。" = "%@ returned an empty or invalid response.";
+"检查 %@ 时应用内部出错；详细信息已写入诊断日志。" = "The app hit an internal error while checking %@. Details are in the diagnostic log.";
+"请求 %@ 超时，请检查服务状态后重试。" = "The request to %@ timed out. Check the service and try again.";
+"收到 %@ 响应后可用" = "Available after %@ responds";
+"请求超时" = "Request timed out";
